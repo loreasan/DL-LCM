@@ -1,0 +1,1547 @@
+library maxlik,pgraph;
+new;
+maxset;
+outwidth 250;
+cls;
+
+@ ------------------------------------------------------------- @
+@ ------------------------------------------------------------- @
+@ ----------- COMPLEMENTARY MATERIAL OF THE PAPER ------------- @
+@ -- "Latent class models with persistence in regime changes" - @
+@ ---------------" A distributed lag analysis " --------------- @
+@ ------------------------------------------------------------- @
+@ ----------------------- June 20, 2025 ----------------------- @
+@ ------------- Authors: Luis Orea and Hervé Dapko ------------ @
+@ ------------------------------------------------------------- @
+@ ------------------------------------------------------------- @
+@   To extend the appealing of our DL-LCM, we also              @
+@   provide codes to estimate non-frontier models (up to a      @
+@   model with 4 classes) where the noise term is distributed   @
+@   as a normal. A hedonic milk price equation is used to       @
+@   illustrate these models.                                    @
+@ ------------------------------------------------------------- @
+@ --------------------- SUMMARY OF TASKS ---------------------- @
+@ TASK 1: READING the dataset.                                  @
+@ TASK 2: Examination of the structure of the panel dataset.    @
+@ TASK 3: Selection of variables for the milk price equation.   @
+@ TASK 4: Estimation of basic OLS and ML models.                @
+@ TASK 5: ESTIMATION OF NON-FRONTIER MODELS.                    @
+@         (only for illustration purposes)                      @
+@   - Standard 2-class LCM                                      @
+@   - 2-class DL-LCM with exogenous lambda                      @
+@   - 2-class DL-LCM with endogenous lambda                     @
+@   - 3-class DL-LCM with endogenous lambda                     @
+@   - 4-class DL-LCM with endogenous lambda                     @
+@ ------------------------------------------------------------- @
+@ ------------------------------------------------------------- @
+
+
+
+
+@ ------------------------------------------------------------- @
+@ ------------------------------------------------------------- @
+@ --------------- TASK 1: READING the dataset ----------------- @
+@ ------- (the 1st variable should identify the firm) --------- @
+@ ------ (the 2nd variable should identify the period) -------- @
+@ ------------------------------------------------------------- @
+@ ------------------------------------------------------------- @
+
+@ ------ output file -----@
+output file=C:\Users\luiso\Dropbox\research\DistributedLag_LCM\Replication_files\Nonfrontier_parameters.out reset;
+
+@ ------- data file ------- @
+load data[2430,17]=C:\Users\luiso\Dropbox\research\DistributedLag_LCM\Replication_files\replication_data.txt;
+
+@ ------------------------------------------------------------- @
+@ ------------------------------------------------------------- @
+@ - TASK 2: Examination of the structure of the panel dataset - @
+@ ------------------------------------------------------------- @
+@ ------------------------------------------------------------- @
+
+@ Variables used here @
+cod=recod(data[.,1]);               @ set here the column of farms codes @
+t=data[.,2]-minc(data[.,2])+1;      @ set here the column of the year    @
+
+tints=tmayi(cod); iobs=maxc(cod); tmay=maxc(t); obs=rows(data);
+
+format /rds 4,0;
+it=zeros(iobs,tmay); stiv=0;
+i=1;
+do while i<=iobs;
+itv=0; j=1; 
+do while j<=tmay; 
+e=cod.==i .and t.==j; it[i,j]=sumc(e); itv=itv+e; j=j+1; endo;
+stiv=stiv+itv*sumc(itv);
+i=i+1;
+endo;
+
+gapi=zeros(iobs,1); e0i=zeros(iobs,1); gapiv=0; e0iv=0;
+i=1;
+do while i<=iobs;
+j=2; do while j<=tmay; e=it[i,j]./=it[i,j-1];  e0=((it[i,j]-it[i,j-1]).==1 .and sumc(it[i,1:j-1]').>=1); gapi[i]=gapi[i]+sumc(e); e0i[i]=e0i[i]+sumc(e0); j=j+1; endo;
+ei=cod.==i; gapiv=gapiv+ei*gapi[i]; e0iv=e0iv+ei*e0i[i];
+i=i+1;
+endo;
+
+sti=sumc(it');
+print; 
+print "Non-selected data"; print;
+print "  cod  gap   e0";; print seqa(1,1,tmay)';; print " sti"; print (seqa(1,1,iobs)~gapi~e0i~it~sti)|(0~0~0~sumc(it~sti)');
+print; print "maxc(tints): ";; print maxc(tints);
+
+@ -------------------------------------- @
+@ ------ Second sample selection ------- @
+@ -------------------------------------- @
+
+e=stiv.>=1;             @ this implies that we use the previous dataset @
+e=tints.>=maxc(tints) .and data[.,1].<=2009; 
+e=gapiv.<=2 .and e0iv.==0; 
+e=tints.>=maxc(tints)-1 .and data[.,1].<=2014;
+
+@ -------------------------------------- @
+@ --- Minimum number of observations --- @
+@ -------------------------------------- @
+minobs=3;
+
+@ balanced panel dataset @
+e=tints.>=maxc(tints);    
+
+@ Sequencial but unbalance panel @
+e=gapiv.<=2 .and e0iv.==0; 
+
+@ Sequencial but unbalance panel with minimum number of observations @
+e=tints.>=minobs .and gapiv.<=2 .and e0iv.==0; 
+
+@ --------------------- @
+@ -- final selection -- @
+@ --------------------- @
+data=selif(data,e.==1); 
+
+@ -------------------------------------------------------- @
+@ -- Examining again the structure of the panel dataset -- @
+@ -------------------------------------------------------- @
+
+@ New data @
+cod=recod(data[.,1]);               @ set here the column of farms codes @
+t=data[.,2]-minc(data[.,2])+1;      @ set here the column of the year    @
+
+tints=tmayi(cod); iobs=maxc(cod); tmay=maxc(t); obs=rows(data);
+
+format /rds 4,0;
+it=zeros(iobs,tmay); stiv=0;
+i=1;
+do while i<=iobs;
+itv=0; j=1; 
+do while j<=tmay; 
+e=cod.==i .and t.==j; it[i,j]=sumc(e); itv=itv+e; j=j+1; endo;
+stiv=stiv+itv*sumc(itv);
+i=i+1;
+endo;
+
+gapi=zeros(iobs,1); e0i=zeros(iobs,1); gapiv=0; e0iv=0;
+i=1;
+do while i<=iobs;
+j=2; do while j<=tmay; e=it[i,j]./=it[i,j-1];  e0=((it[i,j]-it[i,j-1]).==1 .and sumc(it[i,1:j-1]').>=1); gapi[i]=gapi[i]+sumc(e); e0i[i]=e0i[i]+sumc(e0); j=j+1; endo;
+ei=cod.==i; gapiv=gapiv+ei*gapi[i]; e0iv=e0iv+ei*e0i[i];
+i=i+1;
+endo;
+
+sti=sumc(it');
+print; 
+print "Selected data (continuous or balanced dataset)"; print;
+print "  cod  gap   e0";; print seqa(1,1,tmay)';; print " sti"; print (seqa(1,1,iobs)~gapi~e0i~it~sti)|(0~0~0~sumc(it~sti)');
+
+print; 
+print " ------ General information of the panel dataset ------- ";
+print "Observations: ";; print obs;
+print "Firms: ";; print iobs;
+print "Years: ";; print tmay;
+print "First year: ";; print minc(data[.,1]);    @ poner aqui el año @
+print "Last year: ";; print maxc(data[.,1]);     @ poner aqui el año @
+print "Minimum number of observations: ";; print minobs;
+
+wait;
+
+@ -------------------------------------------------------- @
+@ ------------------- variable labels -------------------- @
+@ -------------------------------------------------------- @
+
+@ REPLICATION data @
+cod_expl=data[.,1];
+cod=recod(data[.,1]);
+year=data[.,2];
+lnM=data[.,3];
+lnV=data[.,4];
+lnF=data[.,5];
+lnA=data[.,6];
+lnL=data[.,7];
+t=data[.,8];
+lnY=data[.,9];
+uthasalapro=data[.,10];
+qcelger=data[.,11];
+lpievac=data[.,12];
+lvacsau=data[.,13];
+lsau=data[.,14];
+lnPY=data[.,15];
+cod_coma=data[.,16];
+qprogra=data[.,17];
+
+unos=ones(rows(data),1);
+
+@ -------------- First observed year dummy ------------ @
+@ note: it works even for unbalanced panel datasets     @
+
+tini=0; tfinal=0;
+i=1;
+do while i<=iobs;
+  ei=cod.==i; 
+  ti=selif(t,cod.==i); 
+  tfinal=tfinal+maxc(ti).*ei; 
+  tini=tini+minc(ti).*ei; 
+i=i+1;
+endo;
+
+@ --- Computing the relative time variable --- @
+tr=t-tini+1;
+
+@ variables in deviations @
+lnM=des(lnM);
+lnV=des(lnV); 
+lnF=des(lnF); 
+lnA=des(lnA); 
+lnL=des(lnL); 
+lpievac=des(lpievac); 
+lvacsau=des(lvacsau);
+lsau=des(lsau); 
+uthasalapro=des(uthasalapro);
+qcelger=des(qcelger);
+
+@ time effects and trends @
+y05=year.==2005; y06=year.==2006; y07=year.==2007; y08=year.==2008; y09=year.==2009; y10=year.==2010; y11=year.==2011; y12=year.==2012; y13=year.==2013; y14=year.==2014;
+dt=y06~y07~y08~y09~y10~y11~y12~y13~y14;
+t2=0.5*t^2; 
+
+@ --------------------------------------------------------------- @
+@ --------------------------------------------------------------- @
+@ --- TASK 3: Selection of variables for a Hedonic milk model --- @
+@ --------------------------------------------------------------- @
+@ --------------------------------------------------------------- @
+
+@ variables in deviations @
+@qleche=des(qleche);@
+qcelger=des(qcelger);
+qprogra=des(qprogra);
+lnYd=des(lnY);
+
+@ normalized price @
+lnPYb=between(lnPY,t);
+lnPYbd=lnPY-lnPYb;
+
+@ location dummies (comarca) @
+c1=cod_coma.==1;
+c2=cod_coma.==2; 
+c3=cod_coma.==3; 
+c4=cod_coma.==4; 
+c5=cod_coma.==5; 
+c6=cod_coma.==6; 
+c7=cod_coma.==7; 
+c8=cod_coma.==8; 
+c9=cod_coma.==9; 
+c10=cod_coma.==10; 
+c11=cod_coma.==11; 
+c12=cod_coma.==12; 
+c13=cod_coma.==13; 
+c14=cod_coma.==14; 
+c15=cod_coma.==15; 
+c16=cod_coma.==16; 
+dc=c2~c3~c4~c5~c6~c7~c8~c9~c10~c11~c12~c13~c14~c15~c16;
+
+@ ---- dependent variable ---- @
+y=lnPYbd;
+let namey= lnPYbd;
+
+@ ---------------------------- @
+@ -- Explanatory variables --- @
+@ ---------------------------- @
+
+@ CD with dt @
+x=unos~(qcelger~qprogra)~lnYd~dc;
+let namex= _cons SCC GC lnYd c2 c3 c4 c5 c6 c7 c8 c9 c10 c11 c12 c13 c14 c15 c16;
+
+print; print "Means of the X variables: "; print meanc(x)'; 
+
+@ ---------------------------------------- @
+@ -- Efficiency determinants (not used) -- @
+@ ---------------------------------------- @
+z=unos;
+let namez= lnsu;
+print; print "Means of the z variables: "; print meanc(z)'; 
+
+@ ----------------------------------------------- @
+@ ----- Logit variables (prior probabilities) --- @
+@ ----------------------------------------------- @
+
+q=unos~lsau;
+let nameq= unos lsau;
+print; print "Means of the q variables: "; print meanc(q)'; 
+
+
+@ ----------------------------------------------- @
+@ ----------- Determinants of lambda ------------ @
+@ ----------------------------------------------- @
+
+@ note: I use "ini" to recover it after estimating the homogeneous DL-LCM frontier model @
+
+@lini=unos~lsau;
+let namelini= lambda0 lsau;@
+
+@ ----------------------------------------------- @
+@ ----------- Determinants of lambda ------------ @
+@ ----------------------------------------------- @
+
+@l=unos~lsau;
+let namel= lambda0 lsau;@
+
+l=unos;
+let namel= lambda0;
+
+@ ----- INITIAL logit variables --- @
+qini=q;
+
+@ -------------------------------------------------------- @
+@ ------ Data matrix (not relevant for estimation) ------- @
+@ -------------------------------------------------------- @
+
+data=y~x~z~q~cod~t~lpievac; 
+
+@ Number of variables @
+nx=cols(x); nz=cols(z); nq=cols(q); 
+print; print "nx~nz~nq with    missings: ";; print nx~nz~nq; 
+data=packr(data); y=data[.,1]; x=data[.,2:nx+1]; z=data[.,nx+2:nx+nz+1]; q=data[.,nx+nz+2:cols(data)-3]; cod=data[.,cols(data)-2]; t=data[.,cols(data)-1]; lpievac=data[.,cols(data)];
+data=y~x~z~q;
+
+@ Number of variables @
+nx=cols(x); nz=cols(z); nq=cols(q); 
+print "nx~nz~nq without missings: ";; print nx~nz~nq;
+
+@ all names @
+vardata=namey|namex|namez|nameq;
+
+format /rds 4,0;
+print; 
+print "Frontier explanatory variables: ";; print nx;
+print "Efficiency determinants:        ";; print nz;
+print "Logit variables:                ";; print nq;
+
+@ ----------------------------------------------------- @
+@ ------- Procedure Distributed lag variables --------- @
+@ ----------------------------------------------------- @
+
+@ note: it works even for unbalanced panel datasets     @
+@       due to the loop goes from tmin_i to tmax_i      @
+@       regardless the value of t of each firm          @
+
+proc dislag2(q1,cod1,t1,lambdavalues);
+local m1,ti1,ti0,ti,numit,i,j,h,rowj,seqrow,ei,ej,eh,rowh,m0;
+format /rds 8,4;
+m1=zeros(rows(q1),cols(q1));
+seqrow=seqa(1,1,rows(q1));
+i=1;
+do while i<=maxc(cod1);
+  ei=cod1.==i; ti=selif(t1,cod1.==i); ti1=maxc(ti); ti0=minc(ti); numit=ti1-ti0+1;
+  j=ti0; 
+  do while j<=ti1; 
+    ej=cod1.==i .and t1.==j; 
+    rowj=sumc(ej.*seqrow); ej=seqrow.==rowj;
+    m0=zeros(1,cols(q1));
+    h=ti0; 
+    do while h<=j; 
+      eh=cod1.==i .and t1.==h; 
+      rowh=sumc(eh.*seqrow); eh=seqrow.==rowh;
+      m0=m0+lambdavalues[rowj]^(j-h)*q1[rowh,.];        @ ----- without (1-lamda) -------- @
+    h=h+1; 
+    endo;
+    m1[rowj,.]=m0;
+  j=j+1; 
+  endo;
+i=i+1;
+endo;
+retp(m1);
+endp;
+
+@ ----------------------------------------------------- @
+@ --- sample selection: first observations dropped ---- @
+@ ----------------------------------------------------- @
+
+@ Note: I do not know why I wrote these codes           @
+@       Itord= matrix with each firm's relative t (tr)  @
+
+@ --- ordered observations --- @
+itord=zeros(iobs,tmay); itordv=0;
+i=1;
+do while i<=iobs;
+    j=1; e=0;
+    do while j<=tmay;
+    ei=cod.==i .and t.==j;
+    if it[i,j]==1; e=e+1; itord[i,j]=e; itordv=itordv+ei*e; endif;
+    j=j+1;
+    endo;
+i=i+1;
+endo;
+format /rds 4,0;
+@print; 
+print "Ordered observations (continuous or balanced dataset)"; print;
+print "  cod";; print seqa(1,1,tmay)';; print (seqa(1,1,iobs)~itord);
+print;@
+
+@ ------------------------------------------------- @
+@ ------------------------------------------------- @
+@ ---- TASK 4: basic OLS and ML to start with ----- @
+@ ------------------------------------------------- @
+@ ------------------------------------------------- @
+
+@ OLS regression @
+print; print "------------- OLS regression ------------ ";
+{bols,tstud,rtstud,sigmaols,r2corr,obs,varcov,rvarcov,e,dof} = olsp(y,x); 
+e=y-x*bols; e2=e^2; e3=e^3; e4=e^4;
+m2=meanc(e2); m3=meanc(e3);
+b1star=m3/(6*m2^3/obs)^0.5;
+print; print "Normality tests: "; print "Square-root b1*~N(0,1): ";; print b1star;
+
+@ ML regression: Normal @
+print; print "------------- ML regression: Normal  ------------ ";
+parini=bols*0.9|ln(sigmaols); mvname=namex|("lnsv")';
+
+__title="ML estimates (Normal)";
+_max_CovPar=1; _max_Algorithm=2;  _max_ParNames=mvname; _max_GradTol=0.00001;
+{ parnor,f,g,cov,retcode }=maxlik(data,0,&normal,parini); 
+call maxprt(parnor,f,g,cov,retcode);
+format /rds 15,12;
+print; print "ML normal parameters: "; print parnor; 
+
+@ --- Likehood function: normal distribution ---- @
+proc normal(parml,data);
+local b,e1,y1,x1,sigma,lnfv;
+b=(parml[1:rows(parml)-1]); 
+sigma=exp(parml[rows(parml)]);    @ ojo: se modeliza lnsigma @
+e1=y-x*b; 
+lnfv=-0.5*ln(2*pi)-0.5*ln(sigma^2)-0.5*(e1^2)/sigma^2;
+retp(lnfv);
+endp;
+
+@ ----------------------------------------------------- @
+@ ----------------------------------------------------- @
+@ -- TASK 5: Estimation of non-frontier models -------- @
+@ ----------------------------------------------------- @
+@ ----------------------------------------------------- @
+    
+print; 
+print " --------------------------------------------------- ";
+print " --------------------------------------------------- ";
+print " --------- Non-frontier regressions ---------------- ";
+print " --------------------------------------------------- ";
+print " --------------------------------------------------- ";
+print; 
+print " --------------------------------------------------- ";
+print " -------- Standard non-frontier LCM ---------------- ";
+print " --------------------------------------------------- ";
+
+wait;
+
+parini2=parnor|parnor*0.7|ones(nq,1)*0;
+
+@ ---- checking decomposition of parameters ---- @
+par=parini2;
+parmlet=par[1:rows(par)-cols(q)];
+parmle1=parmlet[1:rows(parmlet)/2];
+parmle2=parmlet[rows(parmlet)/2+1:rows(parmlet)];
+par2log=par[rows(par)-cols(q)+1:rows(par)];
+prob1=exp(q*par2log)./(exp(q*par2log)+1);
+prob2=1-prob1;
+print "SFA GROUP 1:     ";; print parmle1';
+print "SFA GROUP 2:     ";; print parmle2';
+print "Logit variables: ";; print par2log';
+
+@ ----------------------------------------------------- @
+@ -- Standard LCM with normal distributed error term -- @
+@ ----------------------------------------------------- @
+
+mvname2=mvname|mvname|nameq;
+__title="Standard LCM"; 
+_max_CovPar=1; _max_Algorithm=2;  _max_ParNames=mvname2; _max_GradTol=0.0001;
+{ parpro2,f,g,cov,retcode }=maxlik(data,0,&normal2,parini2); 
+call maxprt(parpro2,f,g,cov,retcode);
+format /rds 15,12;
+print; print "Standard LCM with normal distributed error term"; print parpro2;
+
+@ -- Separating the set of parameters into several groups -- @
+format /rds 9,4;
+print; print "Standard LCM"; 
+par=parpro2;
+parmlet=par[1:rows(par)-cols(q)];
+parmle1=parmlet[1:rows(parmlet)/2]; 
+parmle2=parmlet[rows(parmlet)/2+1:rows(parmlet)];
+par2log=par[rows(par)-cols(q)+1:rows(par)];
+print "SFA GROUP 1:     ";; print parmle1';
+print "SFA GROUP 2:     ";; print parmle2';
+print "Logit variables: ";; print par2log';
+
+@ ----- Likehood function: normal model - two groups  ---- @
+proc normal2(par,data);
+local parmlet,par2log,parmle1,parmle2,prob1,prob2,lf,f;
+parmlet=par[1:rows(par)-cols(q)];
+parmle1=parmlet[1:rows(parmlet)/2];
+parmle2=parmlet[rows(parmlet)/2+1:rows(parmlet)];
+par2log=par[rows(par)-cols(q)+1:rows(par)];
+prob1=exp(q*par2log)./(exp(q*par2log)+1);
+prob2=1-prob1;
+f=exp(normal(parmle1,data)).*prob1+exp(normal(parmle2,data)).*prob2;
+lf=ln(f);
+retp(lf);
+endp;
+
+@ ----- posterior class probabilities - half-normal HETEROSCEDASTIC model - two groups ---- @
+proc pr2normal(par,data);
+local parmlet,parmle1,parmle2,parmle3,parlog,parlog1,parlog2,
+prob1,prob2,prob3,lf,f,f1,f2,f3,post1,post2,post3;
+parmlet=par[1:rows(par)-cols(q)];
+parmle1=parmlet[1:rows(parmlet)/2]; parmle2=parmlet[rows(parmlet)/2+1:rows(parmlet)];
+parlog=par[rows(par)-cols(q)+1:rows(par)];
+prob1=exp(q*parlog)./(exp(q*parlog)+1); 
+prob2=1-prob1;
+f1=exp(normal(parmle1,data)).*prob1; f2=exp(normal(parmle2,data)).*prob2;
+f=f1+f2; post1=f1./f; post2=f2./f;
+retp(100*(prob1~prob2~post1~post2~exp(normal(parmle1,data))~exp(normal(parmle2,data))));
+endp;
+
+@ ----------------------------------------------------- @
+@ -- Descriptive statistics of the sample separation -- @
+@ ----------------------------------------------------- @
+
+print; print "Posterior class probabilities (TECH=1, TECH=2): "; 
+format /rds 6,2;
+prob2g=pr2normal(parpro2,data);
+g1=prob2g[.,3].>=prob2g[.,4]; g2=prob2g[.,3].<prob2g[.,4];
+
+@ ---------------------------------------------- @
+@ -- logged relative prior probability (lnRP) -- @
+@ ---------------------------------------------- @
+lnrpprior=ln(prob2g[.,1]./(100-prob2g[.,1])); 
+
+print; print "total average: "; print meanc(prob2g[.,3])~meanc(prob2g[.,4]);
+print "number: "; print sumc(g1)~sumc(g2);
+print "partial average: "; print meanc(selif(prob2g[.,3],g1));; print meanc(selif(prob2g[.,4],g2));
+print "partial maximum: "; print maxc(selif(prob2g[.,3],g1));; print maxc(selif(prob2g[.,4],g2));
+print "partial minimum: "; print minc(selif(prob2g[.,3],g1));; print minc(selif(prob2g[.,4],g2));
+print "partial standard deviation: "; print stdc(selif(prob2g[.,3],g1));; print stdc(selif(prob2g[.,4],g2));
+
+print; print "Posterior probabilities (class 1): "; print;
+call efianual(selif(prob2g[.,3],g1),selif(t,g1)); call efianual(selif(prob2g[.,3],g1),ones(rows(selif(t,g1)),1));
+print; print "Posterior probabilities (class 2): "; print;
+call efianual(selif(prob2g[.,4],g2),selif(t,g2)); call efianual(selif(prob2g[.,4],g2),ones(rows(selif(t,g2)),1));
+print;
+
+@ --------------------------------------------------- @
+@ -- matrices to be extended with other LCM models -- @
+@ --------------------------------------------------- @
+prob2gvec=cod_expl~cod~t~prob2g;
+lnrpvec=cod~t~lnrpprior;
+lambdavec=cod~t~zeros(rows(t),1);
+
+wait;
+
+print; 
+print "------------------------------------------------------";
+print "----- Model 2: lnRP=delta*q+(1-lambda)*lambda*A0 -----";
+print "----------------- m= with (1-lambda) ---------------- "; 
+print "------------------------------------------------------"; 
+print; 
+
+@ ---------------------------- @
+@ -- EXOGENOUS lambda value -- @
+@ ---------------------------- @
+lambda=0.5;     @ set here the EXOGENOUS lambda value @
+
+@ -- other lambda definitions -- @
+lambda=lambda*unos;
+lambdat=lambda.^t;        @ for balanced panel datasets @
+lambdat2=lambda.^tr;      @ for unbalanced panel datasets = comprobado @
+let namelam= lam_0;       @ Ahora sólo recoge delta*A0 @
+@print; print "tini: "; print cod~t~tini~lambdat~lambdat2; wait;@
+lambdat=lambdat2;
+
+print; 
+print "------------------------------------------------------"; 
+print "------------------  lambda=";; print meanc(lambda);; print " ------------------"; 
+print "------------------------------------------------------"; 
+print; 
+
+@ ----- FINAL logit variables for LCM with exogenous distributed lags OUTSIDE --- @
+@m=dislag2(q[.,1:cols(q)],cod,t,lambda);@
+m=dislag2(q,cod,t,lambda);
+q=m~lambdat;
+
+print "---------------------------------------------------- "; 
+print "----------------- q with (1-lambda) ---------------- "; 
+print "---------------------------------------------------- "; 
+q=(1-lambda).*(m~lambdat);            @ ojo: ahora m=dislag2 y lambdat no debe incluir (1-lambda) @
+
+format /rds 3,2;
+print "---------- Degree of persistence meanc(lambda)= ";; print meanc(lambda);; print "---------------- ";
+print "--------------------------------------------------------------------- ";
+
+@ ------------- ML estimates ----------- @
+parini2=parpro2|1;
+
+@ --------------------------------------------- @
+@ -- maximization of the likelihood function -- @
+@ --------------------------------------------- @
+
+mvname2=mvname|mvname|nameq|namelam;
+print; print rows(parini2);; print rows(mvname2); 
+__title="LCM -exogenous distributed lags OUTSIDE"; 
+_max_CovPar=1; _max_Algorithm=2;  _max_ParNames=mvname2; _max_GradTol=0.0001;
+{ parpro2,f,g,cov,retcode }=maxlik(data,0,&normal2,parini2); 
+call maxprt(parpro2,f,g,cov,retcode);
+
+format /rds 15,12;
+print; print "LCM -exogenous distributed lags OUTSIDE"; print parpro2;
+
+format /rds 9,4;
+print; print "LCM -exogenous distributed lags OUTSIDE"; 
+par=parpro2;
+parmlet=par[1:rows(par)-cols(q)];
+parmle1=parmlet[1:rows(parmlet)/2]; 
+parmle2=parmlet[rows(parmlet)/2+1:rows(parmlet)];
+par2log=par[rows(par)-cols(q)+1:rows(par)];                  @ incluye el coef de lambdat @
+par2log=par[rows(par)-cols(q)+1:rows(par)-cols(lambdat)];                @ ahora no @   
+parlambda=par[rows(par)-cols(lambdat)+1:rows(par)];                    
+print;
+print "Meanc(lambda)= ";; print meanc(lambda);; 
+print; 
+print "SFA GROUP 1:     ";; print parmle1';
+print "SFA GROUP 2:     ";; print parmle2';
+print "Logit variables: ";; print par2log';
+print "lambdat coef   : ";; print parlambda';
+
+print; print "Posterior class probabilities (TECH=1, TECH=2): "; 
+format /rds 6,2;
+prob2g=pr2normal(parpro2,data);
+g1=prob2g[.,3].>=prob2g[.,4]; g2=prob2g[.,3].<prob2g[.,4];
+
+@ ---------------------------------------------- @
+@ -- logged relative prior probability (lnRP) -- @
+@ ---------------------------------------------- @
+lnrpprior=ln(prob2g[.,1]./(100-prob2g[.,1])); 
+
+print; print "total average: "; print meanc(prob2g[.,3])~meanc(prob2g[.,4]);
+print "number: "; print sumc(g1)~sumc(g2);
+print "partial average: "; print meanc(selif(prob2g[.,3],g1));; print meanc(selif(prob2g[.,4],g2));
+print "partial maximum: "; print maxc(selif(prob2g[.,3],g1));; print maxc(selif(prob2g[.,4],g2));
+print "partial minimum: "; print minc(selif(prob2g[.,3],g1));; print minc(selif(prob2g[.,4],g2));
+print "partial standard deviation: "; print stdc(selif(prob2g[.,3],g1));; print stdc(selif(prob2g[.,4],g2));
+
+print; print "Posterior probabilities (class 1): "; print;
+call efianual(selif(prob2g[.,3],g1),selif(t,g1)); call efianual(selif(prob2g[.,3],g1),ones(rows(selif(t,g1)),1));
+print; print "Posterior probabilities (class 2): "; print;
+call efianual(selif(prob2g[.,4],g2),selif(t,g2)); call efianual(selif(prob2g[.,4],g2),ones(rows(selif(t,g2)),1));
+print;
+
+@ --------------------------------------------------- @
+@ -- matrices to be extended with other LCM models -- @
+@ --------------------------------------------------- @
+prob2gvec=prob2gvec~prob2g;
+lnrpvec=lnrpvec~lnrpprior;
+lambdavec=lambdavec~lambda;
+
+print; 
+print "----------------------------- ";
+print "----------------------------- ";
+print "---- 2-class - DL-LCM ------- ";
+print "--- (more friendly codes) --- ";
+print "---- (ENDOGENOUS Lambda) ---- ";
+print "----------------------------- ";
+print "----------------------------- ";
+wait;
+
+@ ------------- Original q variables ----------- @
+q=qini;
+
+@ Number of parameters by type of function @
+print; print "Determinants of lambda: ";
+nl=cols(l);
+print; print "cols(l): ";; print nl;
+print; print "Determinants of prior probabilities with persistence: ";
+nm=cols(q)+1;
+print; print "cols(m): ";; print nm; 
+np=rows(parmle1);     
+print; print "Determinants of each production function: ";
+print; print "rows(parmle1): ";; print np; 
+
+@ --- initial parameters --- @
+parini2=(parmle1|parmle2)|(par2log|parlambda|0|0);
+parini2=(parmle1|parmle2)|(par2log|parlambda|0);        // as e(0)/(1+e(0))=0.5 it converges immediately @
+mvname2=(mvname|mvname)|(nameq|namelam|namel);
+
+print; print "2-class rows: ";; print rows(parini2)~rows(mvname2); 
+
+@ --- Checking the decomposition of the whole set of parameters --- @
+parnp1=parini2[1:np];
+parnp2=parini2[np+1:2*np];
+parnm1=parini2[2*np+1:2*np+nm];
+parnl1=parini2[2*np+nm+1:2*np+nm+nl];
+print; print "Checking the decomposition of the whole set of parameters: ";
+print; 
+print "SFA GROUP 1:      ";; print parnp1';
+print "SFA GROUP 2:      ";; print parnp2';
+print "Logit variables  1: ";; print parnm1';
+print "Lambda variables 1: ";; print parnl1';
+
+wait;
+
+@ ----- Likehood function: 2-class DC-LCM model - Endogenous Lambda INSIDE  ---- @
+proc endoglcm2normal(par,data);
+local parnp1,parnp2,parnp3,parnm1,parnl1,parnm2,parnl2;
+local lam1,lam2,lamt1,lamt2,m1,m2,prob1,prob2,prob3,lf,f;
+parnp1=par[1:np];
+parnp2=par[np+1:2*np];
+parnm1=par[2*np+1:2*np+nm];
+parnl1=par[2*np+nm+1:2*np+nm+nl];
+lam1=exp(l*parnl1)./(exp(l*parnl1)+1);      @ computation of lambda_1 @
+lamt1=lam1.^tr;                             @ lambda_1^tr trend @
+m1=dislag2(q,cod,t,lam1)~lamt1;              @ computation of m for class 1 @
+m1=(1-lam1).*m1;                           
+prob1=exp(m1*parnm1)./(exp(m1*parnm1)+1);   @ computation of priors for class 1 @
+prob2=1-prob1;
+f=exp(normal(parnp1,data)).*prob1+exp(normal(parnp2,data)).*prob2;
+lf=ln(f);
+retp(lf);
+endp;
+
+@ ----- posterior class probabilities - Endogenous Lambda INSIDE ---- @
+proc prendoglcm2normal(par,data);
+local parnp1,parnp2,parnp3,parnm1,parnl1,parnm2,parnl2;
+local lam1,lam2,lamt1,lamt2,m1,m2,prob1,prob2,prob3,lf,f;
+local post1,post2,post3,f1,f2,f3;
+parnp1=par[1:np];
+parnp2=par[np+1:2*np];
+parnm1=par[2*np+1:2*np+nm];
+parnl1=par[2*np+nm+1:2*np+nm+nl];
+lam1=exp(l*parnl1)./(exp(l*parnl1)+1);      @ computation of lambda_1 @
+lamt1=lam1.^tr;                             @ lambda_1^tr trend @
+m1=dislag2(q,cod,t,lam1)~lamt1;              @ computation of m for class 1 @
+m1=(1-lam1).*m1;                           
+prob1=exp(m1*parnm1)./(exp(m1*parnm1)+1);   @ computation of priors for class 1 @
+prob2=1-prob1;
+f1=exp(normal(parnp1,data)).*prob1; 
+f2=exp(normal(parnp2,data)).*prob2;
+f=f1+f2; post1=f1./f; post2=f2./f; 
+retp(100*(prob1~prob2~post1~post2~exp(normal(parnp1,data))~exp(normal(parnp2,data))));
+endp;
+
+@ --------------------------------------------------------- @
+@ -- maximization of the likelihood function - 2 classes -- @
+@ --------------------------------------------------------- @
+
+__title="LCM -ENDOGENOUS Lambda INSIDE - 2 classes ";
+_max_CovPar=2; _max_Algorithm=2;  _max_ParNames=mvname2; _max_GradTol=0.0001;
+{ parpro2,f,g,cov,retcode }=maxlik(data,0,&endoglcm2normal,parini2); 
+call maxprt(parpro2,f,g,cov,retcode);
+
+format /rds 15,12;
+print; print "LCM -ENDOGENOUS Lambda INSIDE - 2 classes"; print parpro2;
+par=parpro2;
+parnp1=par[1:np];
+parnp2=par[np+1:2*np];
+parnm1=par[2*np+1:2*np+nm];
+parnl1=par[2*np+nm+1:2*np+nm+nl];
+
+print;
+print "Coeficients of Lambda: ";; print parnl1';
+lambda=exp(l*parnl1)./(exp(l*parnl1)+1);
+
+print "Statistics of Lambda: ";; 
+call efianual(lambda,t); call efianual(lambda,ones(rows(t),1)); print; 
+print;
+print "Meanc(lambda)= ";; print meanc(lambda);; 
+print; 
+print "SFA GROUP 1:      ";; print parnp1';
+print "SFA GROUP 2:      ";; print parnp2';
+print "Logit variables:  ";; print parnm1';
+print "Lambda variables: ";; print parnl1';
+
+print; print "Posterior class probabilities - Endogenous Lambda INSIDE (TECH=1, TECH=2): "; 
+format /rds 6,2;
+prob2g=prendoglcm2normal(parpro2,data);
+g1=prob2g[.,3].>=prob2g[.,4]; g2=prob2g[.,3].<prob2g[.,4];
+
+@ ---- lnRP ---- @
+lnrpprior=ln(prob2g[.,1]./(100-prob2g[.,1])); 
+
+print; print "total average: "; print meanc(prob2g[.,3])~meanc(prob2g[.,4]);
+print "number: "; print sumc(g1)~sumc(g2);
+print "partial average: "; print meanc(selif(prob2g[.,3],g1));; print meanc(selif(prob2g[.,4],g2));
+print "partial maximum: "; print maxc(selif(prob2g[.,3],g1));; print maxc(selif(prob2g[.,4],g2));
+print "partial minimum: "; print minc(selif(prob2g[.,3],g1));; print minc(selif(prob2g[.,4],g2));
+print "partial standard deviation: "; print stdc(selif(prob2g[.,3],g1));; print stdc(selif(prob2g[.,4],g2));
+
+print; print "Posterior probabilities (class 1): "; print;
+call efianual(selif(prob2g[.,3],g1),selif(t,g1)); call efianual(selif(prob2g[.,3],g1),ones(rows(selif(t,g1)),1));
+print; print "Posterior probabilities (class 2): "; print;
+call efianual(selif(prob2g[.,4],g2),selif(t,g2)); call efianual(selif(prob2g[.,4],g2),ones(rows(selif(t,g2)),1));
+
+@ --------------------------------------------------- @
+@ -- matrices to be extended with other LCM models -- @
+@ --------------------------------------------------- @
+prob2gvec=prob2gvec~prob2g;
+lnrpvec=lnrpvec~lnrpprior;
+lambdavec=lambdavec~lambda;
+
+print; 
+print "----------------------------- ";
+print "----------------------------- ";
+print "----------------------------- ";
+print "------ 3-class - LCM -------- ";
+print "----------------------------- ";
+print "----------------------------- ";
+print "----------------------------- ";
+
+wait;
+
+print; 
+print "--------------------------------------------------------------------- ";
+print "--------- 3-class LCM with persistence in regime changes  ----------- ";
+print "--------------------(ENDOGENOUS Lambda INSIDE) ---------------------- ";
+print "--------------------------------------------------------------------- ";
+print; 
+print "--------------------------------------------------------------------- ";
+print "--------------------    (Heterogeneous model)  ---------------------- ";
+print "--------------------------------------------------------------------- ";
+
+@ ------------- Original q variables ----------- @
+q=qini;
+
+@ --- initial parameters --- @
+parini3=(parnp1|parnp2|parnp1)|(parnm1|parnl1)|(parnm1|parnl1);
+mvname3=(mvname|mvname|mvname)|(nameq|namelam|namel)|(nameq|namelam|namel);
+
+print; print "3-class rows: ";; print rows(parini3)~rows(mvname3); wait;
+
+@ --- Checking the decomposition of the whole set of parameters --- @
+parnp1=parini3[1:np];
+parnp2=parini3[np+1:2*np];
+parnp3=parini3[2*np+1:3*np];
+parnm1=parini3[3*np+1:3*np+nm];
+parnl1=parini3[3*np+nm+1:3*np+nm+nl];
+parnm2=parini3[3*np+nm+nl+1:3*np+nm+nl+nm];
+parnl2=parini3[3*np+nm+nl+nm+1:3*np+nm+nl+nm+nl];
+
+print; print "Checking the decomposition of the whole set of parameters: ";
+print; 
+print "SFA GROUP 1:      ";; print parnp1';
+print "SFA GROUP 2:      ";; print parnp2';
+print "SFA GROUP 3:      ";; print parnp3';
+print "Logit variables  1: ";; print parnm1';
+print "Lambda variables 1: ";; print parnl1';
+print "Logit variables  2: ";; print parnm2';
+print "Lambda variables 2: ";; print parnl2';
+
+wait;
+
+@ --------------------------------------------------------- @
+@ -- maximization of the likelihood function - 3 classes -- @
+@ --------------------------------------------------------- @
+
+__title="LCM -ENDOGENOUS Lambda INSIDE - 3 classes ";
+_max_CovPar=2; _max_Algorithm=2;  _max_ParNames=mvname3; _max_GradTol=0.0001;
+{ parpro3,f,g,cov,retcode }=maxlik(data,0,&endoglcm3normal,parini3); 
+call maxprt(parpro3,f,g,cov,retcode);
+
+format /rds 15,12;
+print; print "LCM -ENDOGENOUS Lambda INSIDE - 3 classes"; print parpro3;
+
+
+@ ----- Likehood function: 3-class DC-LCM model - Endogenous Lambda INSIDE  ---- @
+proc endoglcm3normal(par,data);
+local parnp1,parnp2,parnp3,parnm1,parnl1,parnm2,parnl2;
+local lam1,lam2,lamt1,lamt2,m1,m2,prob1,prob2,prob3,lf,f;
+parnp1=par[1:np];
+parnp2=par[np+1:2*np];
+parnp3=par[2*np+1:3*np];
+parnm1=par[3*np+1:3*np+nm];
+parnl1=par[3*np+nm+1:3*np+nm+nl];
+parnm2=par[3*np+nm+nl+1:3*np+nm+nl+nm];
+parnl2=par[3*np+nm+nl+nm+1:3*np+nm+nl+nm+nl];
+lam1=exp(l*parnl1)./(exp(l*parnl1)+1);      @ computation of lambda_1 @
+lam2=exp(l*parnl2)./(exp(l*parnl2)+1);      @ computation of lambda_2 @
+lamt1=lam1.^tr;                             @ lambda_1^tr trend @
+lamt2=lam2.^tr;                             @ lambda_2^tr trend @
+m1=dislag2(q,cod,t,lam1)~lamt1;              @ computation of m for class 1 @
+m1=(1-lam1).*m1;                           
+m2=dislag2(q,cod,t,lam2)~lamt2;              @ computation of m for class 2 @
+m2=(1-lam2).*m2;                          
+prob1=exp(m1*parnm1)./(exp(m1*parnm1)+exp(m2*parnm2)+1);   @ computation of priors for class 1 @
+prob2=exp(m2*parnm2)./(exp(m1*parnm1)+exp(m2*parnm2)+1);   @ computation of priors for class 2 @
+prob3=1-prob1-prob2;
+f=exp(normal(parnp1,data)).*prob1+exp(normal(parnp2,data)).*prob2+exp(normal(parnp3,data)).*prob3;
+lf=ln(f);
+retp(lf);
+endp;
+
+@ ----- posterior class probabilities - Endogenous Lambda INSIDE ---- @
+proc prendoglcm3normal(par,data);
+local parnp1,parnp2,parnp3,parnm1,parnl1,parnm2,parnl2;
+local lam1,lam2,lamt1,lamt2,m1,m2,prob1,prob2,prob3,lf,f;
+local post1,post2,post3,f1,f2,f3;
+parnp1=par[1:np];
+parnp2=par[np+1:2*np];
+parnp3=par[2*np+1:3*np];
+parnm1=par[3*np+1:3*np+nm];
+parnl1=par[3*np+nm+1:3*np+nm+nl];
+parnm2=par[3*np+nm+nl+1:3*np+nm+nl+nm];
+parnl2=par[3*np+nm+nl+nm+1:3*np+nm+nl+nm+nl];
+lam1=exp(l*parnl1)./(exp(l*parnl1)+1);      @ computation of lambda_1 @
+lam2=exp(l*parnl2)./(exp(l*parnl2)+1);      @ computation of lambda_2 @
+lamt1=lam1.^tr;                             @ lambda_1^tr trend @
+lamt2=lam2.^tr;                             @ lambda_2^tr trend @
+m1=dislag2(q,cod,t,lam1)~lamt1;              @ computation of m for class 1 @
+m1=(1-lam1).*m1;                           
+m2=dislag2(q,cod,t,lam2)~lamt2;              @ computation of m for class 2 @
+m2=(1-lam2).*m2;                          
+prob1=exp(m1*parnm1)./(exp(m1*parnm1)+exp(m2*parnm2)+1);   @ computation of priors for class 1 @
+prob2=exp(m2*parnm2)./(exp(m1*parnm1)+exp(m2*parnm2)+1);   @ computation of priors for class 2 @
+prob3=1-prob1-prob2;
+f1=exp(normal(parnp1,data)).*prob1; 
+f2=exp(normal(parnp2,data)).*prob2;
+f3=exp(normal(parnp3,data)).*prob3;
+f=f1+f2+f3; post1=f1./f; post2=f2./f; post3=f3./f;
+retp(100*(prob1~prob2~prob3~post1~post2~post3~exp(normal(parnp1,data))~exp(normal(parnp2,data))~exp(normal(parnp3,data))));
+endp;
+
+@ decomposition of the whole set of parameters @
+par=parpro3;
+
+parnp1=par[1:np];
+parnp2=par[np+1:2*np];
+parnp3=par[2*np+1:3*np];
+parnm1=par[3*np+1:3*np+nm];
+parnl1=par[3*np+nm+1:3*np+nm+nl];
+parnm2=par[3*np+nm+nl+1:3*np+nm+nl+nm];
+parnl2=par[3*np+nm+nl+nm+1:3*np+nm+nl+nm+nl];
+
+print; 
+print "-------------------------------------------------------";
+print "----- Descriptive statistics of Lambda - 3 classes ----";
+print "-------------------------------------------------------";
+print;
+print "Coeficients of Lambda - class 1: ";; print parnl1';
+lambda1=exp(l*parnl1)./(exp(l*parnl1)+1);      @ computation of lambda_1 @
+print "Statistics of Lambda - class 1: ";; 
+call efianual(lambda1,t); call efianual(lambda1,ones(rows(t),1)); print; 
+print;
+print "Meanc(lambda - class 1)= ";; print meanc(lambda1);; 
+print;
+print "Coeficients of Lambda - class 2: ";; print parnl2';
+lambda2=exp(l*parnl2)./(exp(l*parnl2)+1);      @ computation of lambda_2 @
+print "Statistics of Lambda - class 2: ";; 
+call efianual(lambda2,t); call efianual(lambda2,ones(rows(t),1)); print; 
+print;
+print "Meanc(lambda - class 2)= ";; print meanc(lambda2);; 
+
+print; 
+print "-------------------------------------------";
+print "------ Posterior class probabilities ------";
+print "-------------------------------------------";
+
+print; print "Posterior class probabilities - Endogenous Lambda INSIDE (TECH=1, TECH=2): "; 
+format /rds 6,2;
+prob3g=prendoglcm3normal(parpro3,data);
+g1=prob3g[.,4].>=prob3g[.,5] .and prob3g[.,4].>=prob3g[.,6]; 
+g2=prob3g[.,5].>prob3g[.,4]  .and prob3g[.,5].>=prob3g[.,6];
+g3=1-g1-g2;
+
+@ ---- lnRP1 ---- @
+lnrpprior1=ln(prob3g[.,1]./(100-prob3g[.,1]-prob3g[.,2]));
+
+@ ---- lnRP2 ---- @
+lnrpprior2=ln(prob3g[.,2]./(100-prob3g[.,1]-prob3g[.,2])); 
+
+print; 
+print "------------------------------";
+print "------ Sample partition ------";
+print "------------------------------";
+print;
+print "Class 1 - Class 2  - Class3 "; print sumc(g1)~sumc(g2)~sumc(g3);
+
+@ --------------------------------------------------- @
+@ -- matrices to be extended with other LCM models -- @
+@ --------------------------------------------------- @
+prob2gvec=prob2gvec~prob3g;
+lnrpvec=lnrpvec~(lnrpprior1~lnrpprior2);
+lambdavec=lambdavec~(lambda1~lambda2);
+
+end;
+
+print; 
+print "----------------------------- ";
+print "----------------------------- ";
+print "----------------------------- ";
+print "------ 4-class - LCM -------- ";
+print "----------------------------- ";
+print "----------------------------- ";
+print "----------------------------- ";
+
+wait;
+
+print; 
+print "--------------------------------------------------------------------- ";
+print "--------- 4-class LCM with persistence in regime changes  ----------- ";
+print "--------------------(ENDOGENOUS Lambda INSIDE) ---------------------- ";
+print "--------------------------------------------------------------------- ";
+print; 
+print "--------------------------------------------------------------------- ";
+print "--------------------    (Heterogeneous model)  ---------------------- ";
+print "--------------------------------------------------------------------- ";
+
+@ ------------- Original q variables ----------- @
+q=qini;
+
+@ --- initial parameters --- @
+parini4=(parnp2|parnp2|parnp1|parnp1)|(parnm1|parnl1)|(parnm1|parnl1)|(parnm1|parnl1);
+mvname4=(mvname|mvname|mvname|mvname)|(nameq|namelam|namel)|(nameq|namelam|namel)|(nameq|namelam|namel);
+
+print; print "4-class rows: ";; print rows(parini4)~rows(mvname4); wait;
+
+@ --- Checking the decomposition of the whole set of parameters --- @
+parnp1=parini4[1:np];
+parnp2=parini4[np+1:2*np];
+parnp3=parini4[2*np+1:3*np];
+parnp4=parini4[3*np+1:4*np];
+parnm1=parini4[4*np+1:4*np+nm];
+parnl1=parini4[4*np+nm+1:4*np+nm+nl];
+parnm2=parini4[4*np+nm+nl+1:4*np+nm+nl+nm];
+parnl2=parini4[4*np+nm+nl+nm+1:4*np+nm+nl+nm+nl];
+parnm3=parini4[4*np+nm+nl+nm+nl+1:4*np+nm+nl+nm+nl+nm];
+parnl3=parini4[4*np+nm+nl+nm+nl+nm+1:4*np+nm+nl+nm+nl+nm+nl];
+
+print; print "Checking the decomposition of the whole set of parameters: ";
+print; 
+print "SFA GROUP 1:      ";; print parnp1';
+print "SFA GROUP 2:      ";; print parnp2';
+print "SFA GROUP 3:      ";; print parnp3';
+print "SFA GROUP 4:      ";; print parnp4';
+print "Logit variables  1: ";; print parnm1';
+print "Lambda variables 1: ";; print parnl1';
+print "Logit variables  2: ";; print parnm2';
+print "Lambda variables 2: ";; print parnl2';
+print "Logit variables  3: ";; print parnm3';
+print "Lambda variables 3: ";; print parnl3';
+
+wait;
+
+@ --------------------------------------------------------- @
+@ -- maximization of the likelihood function - 4 classes -- @
+@ --------------------------------------------------------- @
+
+__title="LCM -ENDOGENOUS Lambda INSIDE - 4 classes ";
+_max_CovPar=2; _max_Algorithm=3;  _max_ParNames=mvname4; _max_GradTol=0.0001;
+{ parpro4,f,g,cov,retcode }=maxlik(data,0,&endoglcm4normal,parini4); 
+call maxprt(parpro4,f,g,cov,retcode);
+
+format /rds 15,12;
+print; print "LCM -ENDOGENOUS Lambda INSIDE - 4 classes"; print parpro4;
+
+@ ----- Likehood function: 4-class DC-LCM model - Endogenous Lambda INSIDE  ---- @
+proc endoglcm4normal(par,data);
+local parnp1,parnp2,parnp3,parnm1,parnl1,parnm2,parnl2;
+local lam1,lam2,lamt1,lamt2,m1,m2,prob1,prob2,prob3,lf,f;
+local parnp4,parnm3,parnl3,lam3,lamt3,m3,prob4;
+    
+parnp1=par[1:np];
+parnp2=par[np+1:2*np];
+parnp3=par[2*np+1:3*np];
+parnp4=par[3*np+1:4*np];
+parnm1=par[4*np+1:4*np+nm];
+parnl1=par[4*np+nm+1:4*np+nm+nl];
+parnm2=par[4*np+nm+nl+1:4*np+nm+nl+nm];
+parnl2=par[4*np+nm+nl+nm+1:4*np+nm+nl+nm+nl];
+parnm3=par[4*np+nm+nl+nm+nl+1:4*np+nm+nl+nm+nl+nm];
+parnl3=par[4*np+nm+nl+nm+nl+nm+1:4*np+nm+nl+nm+nl+nm+nl];
+
+lam1=exp(l*parnl1)./(exp(l*parnl1)+1);      @ computation of lambda_1 @
+lam2=exp(l*parnl2)./(exp(l*parnl2)+1);      @ computation of lambda_2 @
+lam3=exp(l*parnl3)./(exp(l*parnl3)+1);      @ computation of lambda_2 @
+lamt1=lam1.^tr;                             @ lambda_1^tr trend @
+lamt2=lam2.^tr;                             @ lambda_2^tr trend @
+lamt3=lam3.^tr;                             @ lambda_3^tr trend @
+m1=dislag2(q,cod,t,lam1)~lamt1;              @ computation of m for class 1 @
+m1=(1-lam1).*m1;                           
+m2=dislag2(q,cod,t,lam2)~lamt2;              @ computation of m for class 2 @
+m2=(1-lam2).*m2;    
+m3=dislag2(q,cod,t,lam3)~lamt3;              @ computation of m for class 3 @
+m3=(1-lam3).*m3;  
+prob1=exp(m1*parnm1)./(exp(m1*parnm1)+exp(m2*parnm2)+exp(m3*parnm3)+1);   @ computation of priors for class 1 @
+prob2=exp(m2*parnm2)./(exp(m1*parnm1)+exp(m2*parnm2)+exp(m3*parnm3)+1);   @ computation of priors for class 2 @
+prob3=exp(m3*parnm3)./(exp(m1*parnm1)+exp(m2*parnm2)+exp(m3*parnm3)+1);   @ computation of priors for class 2 @
+prob4=1-prob1-prob2-prob3;
+f=exp(normal(parnp1,data)).*prob1+exp(normal(parnp2,data)).*prob2+exp(normal(parnp3,data)).*prob3+exp(normal(parnp4,data)).*prob4;
+lf=ln(f);
+retp(lf);
+endp;
+
+@ ----- posterior class probabilities - Endogenous Lambda INSIDE ---- @
+proc prendoglcm4normal(par,data);
+local parnp1,parnp2,parnp3,parnm1,parnl1,parnm2,parnl2;
+local lam1,lam2,lamt1,lamt2,m1,m2,prob1,prob2,prob3,lf,f;
+local post1,post2,post3,f1,f2,f3;
+local parnp4,parnm3,parnl3,lam3,lamt3,m3,prob4,f4,post4;
+    
+parnp1=par[1:np];
+parnp2=par[np+1:2*np];
+parnp3=par[2*np+1:3*np];
+parnp4=par[3*np+1:4*np];
+parnm1=par[4*np+1:4*np+nm];
+parnl1=par[4*np+nm+1:4*np+nm+nl];
+parnm2=par[4*np+nm+nl+1:4*np+nm+nl+nm];
+parnl2=par[4*np+nm+nl+nm+1:4*np+nm+nl+nm+nl];
+parnm3=par[4*np+nm+nl+nm+nl+1:4*np+nm+nl+nm+nl+nm];
+parnl3=par[4*np+nm+nl+nm+nl+nm+1:4*np+nm+nl+nm+nl+nm+nl];
+    
+lam1=exp(l*parnl1)./(exp(l*parnl1)+1);      @ computation of lambda_1 @
+lam2=exp(l*parnl2)./(exp(l*parnl2)+1);      @ computation of lambda_2 @
+lam3=exp(l*parnl3)./(exp(l*parnl3)+1);      @ computation of lambda_2 @
+lamt1=lam1.^tr;                             @ lambda_1^tr trend @
+lamt2=lam2.^tr;                             @ lambda_2^tr trend @
+lamt3=lam3.^tr;                             @ lambda_3^tr trend @
+m1=dislag2(q,cod,t,lam1)~lamt1;              @ computation of m for class 1 @
+m1=(1-lam1).*m1;                           
+m2=dislag2(q,cod,t,lam2)~lamt2;              @ computation of m for class 2 @
+m2=(1-lam2).*m2;    
+m3=dislag2(q,cod,t,lam3)~lamt3;              @ computation of m for class 3 @
+m3=(1-lam3).*m3;  
+prob1=exp(m1*parnm1)./(exp(m1*parnm1)+exp(m2*parnm2)+exp(m3*parnm3)+1);   @ computation of priors for class 1 @
+prob2=exp(m2*parnm2)./(exp(m1*parnm1)+exp(m2*parnm2)+exp(m3*parnm3)+1);   @ computation of priors for class 2 @
+prob3=exp(m3*parnm3)./(exp(m1*parnm1)+exp(m2*parnm2)+exp(m3*parnm3)+1);   @ computation of priors for class 2 @
+prob4=1-prob1-prob2-prob3;
+f1=exp(normal(parnp1,data)).*prob1; 
+f2=exp(normal(parnp2,data)).*prob2;
+f3=exp(normal(parnp3,data)).*prob3;
+f4=exp(normal(parnp4,data)).*prob4;
+f=f1+f2+f3+f4; post1=f1./f; post2=f2./f; post3=f3./f; post4=f4./f;
+retp(100*(prob1~prob2~prob3~prob4~post1~post2~post3~post4~exp(normal(parnp1,data))~exp(normal(parnp2,data))~exp(normal(parnp3,data))~exp(normal(parnp4,data))));
+endp;
+
+@ decomposition of the whole set of parameters @
+par=parpro4;
+
+parnp1=par[1:np];
+parnp2=par[np+1:2*np];
+parnp3=par[2*np+1:3*np];
+parnp4=par[3*np+1:4*np];
+parnm1=par[4*np+1:4*np+nm];
+parnl1=par[4*np+nm+1:4*np+nm+nl];
+parnm2=par[4*np+nm+nl+1:4*np+nm+nl+nm];
+parnl2=par[4*np+nm+nl+nm+1:4*np+nm+nl+nm+nl];
+parnm3=par[4*np+nm+nl+nm+nl+1:4*np+nm+nl+nm+nl+nm];
+parnl3=par[4*np+nm+nl+nm+nl+nm+1:4*np+nm+nl+nm+nl+nm+nl];
+    
+print; 
+print "-------------------------------------------------------";
+print "----- Descriptive statistics of Lambda - 4 classes ----";
+print "-------------------------------------------------------";
+print;
+print "Coeficients of Lambda - class 1: ";; print parnl1';
+lambda1=exp(l*parnl1)./(exp(l*parnl1)+1);      @ computation of lambda_1 @
+print "Statistics of Lambda - class 1: ";; 
+call efianual(lambda1,t); call efianual(lambda1,ones(rows(t),1)); print; 
+print;
+print "Meanc(lambda - class 1)= ";; print meanc(lambda1);; 
+print;
+print "Coeficients of Lambda - class 2: ";; print parnl2';
+lambda2=exp(l*parnl2)./(exp(l*parnl2)+1);      @ computation of lambda_2 @
+print "Statistics of Lambda - class 2: ";; 
+call efianual(lambda2,t); call efianual(lambda2,ones(rows(t),1)); print; 
+print;
+print "Meanc(lambda - class 2)= ";; print meanc(lambda2);;
+
+print;
+print "Coeficients of Lambda - class 3: ";; print parnl3';
+lambda3=exp(l*parnl3)./(exp(l*parnl3)+1);      @ computation of lambda_3 @
+print "Statistics of Lambda - class 3: ";; 
+call efianual(lambda3,t); call efianual(lambda3,ones(rows(t),1)); print; 
+print;
+print "Meanc(lambda - class 3)= ";; print meanc(lambda3);; 
+
+print; 
+print "-------------------------------------------";
+print "------ Posterior class probabilities ------";
+print "-------------------------------------------";
+
+print; print "Posterior class probabilities - Endogenous Lambda INSIDE (TECH=1,2,3,4): "; 
+format /rds 6,2;
+prob4g=prendoglcm4normal(parpro4,data);
+@      1     2     3     4        5     6     7     8     @
+@    prob1~prob2~prob3~prob4    post1~post2~post3~post4   @
+g1=prob4g[.,5].>=prob4g[.,6] .and prob4g[.,5].>=prob4g[.,7] .and prob4g[.,5].>=prob4g[.,8]; 
+g2=prob4g[.,6].>prob4g[.,5]  .and prob4g[.,6].>=prob4g[.,7] .and prob4g[.,6].>=prob4g[.,8];
+g3=prob4g[.,7].>prob4g[.,5]  .and prob4g[.,7].>prob4g[.,6]  .and prob4g[.,7].>=prob4g[.,8];
+g4=1-g1-g2-g3;
+
+@ ---- lnRP1 ---- @
+lnrpprior1=ln(prob4g[.,1]./(100-prob4g[.,1]-prob4g[.,2]-prob4g[.,3]));
+
+@ ---- lnRP2 ---- @
+lnrpprior2=ln(prob4g[.,2]./(100-prob4g[.,1]-prob4g[.,2]-prob4g[.,3])); 
+
+@ ---- lnRP3 ---- @
+lnrpprior3=ln(prob4g[.,3]./(100-prob4g[.,1]-prob4g[.,2]-prob4g[.,3])); 
+
+print; 
+print "------------------------------";
+print "------ Sample partition ------";
+print "------------------------------";
+print;
+print "Class 1 - Class 2  - Class3 "; print sumc(g1)~sumc(g2)~sumc(g3);
+
+@ --------------------------------------------------- @
+@ -- matrices to be extended with other LCM models -- @
+@ --------------------------------------------------- @
+prob2gvec=prob2gvec~prob4g;
+lnrpvec=lnrpvec~(lnrpprior1~lnrpprior2~lnrpprior3);
+lambdavec=lambdavec~(lambda1~lambda2~lambda3);
+
+@ ------------------------------------------ @
+@ ------------------------------------------ @
+@ ----- END OF THE NONFRONTIER SETTING ----- @
+@ ------------------------------------------ @
+@ ------------------------------------------ @
+
+
+end;
+
+
+@ ------------------------------------------------------ @
+@ ------------------------------------------------------ @
+@ ------------------------------------------------------ @
+@ ---- Set of procedures writen by Luis Orea ----------- @
+@ -- (do not drop them as they have been used before) -- @
+@ ------------------------------------------------------ @
+@ ------------------------------------------------------ @
+@ ------------------------------------------------------ @
+
+@ ----------------------- @
+
+proc des(z);
+local i,zz;
+i=1;
+do while i<=cols(z);
+if i==1; 
+zz=z[.,i]-meanc(z[.,i]);
+else;
+zz=zz~(z[.,i]-meanc(z[.,i]));
+endif;
+i=i+1;
+endo;
+retp(zz);
+endp;
+
+
+proc tl(x);
+local z,i,m1,m;
+z=x;
+i=1;
+do while i<=cols(x);
+m1=0.5*x[.,i]^2;
+z=z~m1;
+i=i+1;
+endo;
+i=1;
+do while i<=cols(x)-1;
+m=x[.,i].*x[.,i+1:cols(x)];
+z=z~m;
+i=i+1;
+endo;
+retp(z);
+endp;
+
+
+proc between(z,codz);
+local ulti,pri,i,e,z1;
+  z1=zeros(rows(z),cols(z));
+  ulti=maxc(codz);
+  pri=minc(codz);
+  i=pri;
+    do while i<=ulti;
+    e=codz.==i;
+    z1=z1+e.*(meanc(packr(selif(z,e))))';
+  i=i+1;
+  endo;
+retp(z1);
+endp;
+
+proc recod(z);
+local ulti,pri,i,e,z1,j;
+  ulti=maxc(z);
+  pri=minc(z);
+  i=1; j=1;
+  do while i<=ulti;
+    e=z.==i;
+    if sumc(e)>=1; if j==1; z1=j.*e; else; z1=z1+j.*e; endif; j=j+1;endif;
+  i=i+1;
+  endo;
+retp(z1);
+endp;
+
+proc tmayi(z);
+local ulti,pri,i,e,z1;
+  ulti=maxc(z);
+  pri=minc(z);
+  i=pri;
+  z1=zeros(rows(z),1);
+  do while i<=ulti;
+    e=z.==i;
+    z1=z1+sumc(e).*e;
+  i=i+1;
+  endo;
+retp(z1);
+endp;
+
+
+proc within(z,codz);
+z=z-between(z,codz);
+retp(z);
+endp;
+
+proc ealpha(z,ecod,codz);
+local ulti,pri,i,e,z1;
+  z1=zeros(rows(codz),1);
+  ulti=maxc(codz);
+  pri=minc(codz);
+  i=pri;
+    do while i<=ulti;
+    e=codz.==i;
+    z1=z1+e.*selif(z,ecod.==i);
+  i=i+1;
+  endo;
+retp(z1);
+endp;
+
+
+proc lag(z,l);
+local z1;
+if l.<=0;
+  z1=z[1:rows(z)-abs(l)];
+  z1=zeros(abs(l),1)|z1;
+else;
+  z1=z[(1+l):rows(z)];
+  z1=z1|zeros(l,1);
+endif;
+retp(z1);
+endp;
+
+
+
+
+@ -------------------------- Procedures ---------------------------- @
+
+proc between(z,codz);
+local ulti,pri,i,e,z1;
+  z1=zeros(rows(z),cols(z));
+  ulti=maxc(codz);
+  pri=minc(codz);
+  i=pri;
+    do while i<=ulti;
+    e=codz.==i;
+    z1=z1+e.*(meanc(packr(selif(z,e))))';
+  i=i+1;
+  endo;
+retp(z1);
+endp;
+
+proc within(z,codz);
+z=z-between(z,codz);
+retp(z);
+endp;
+
+proc ealpha(z,ecod,codz);
+local ulti,pri,i,e,z1;
+  z1=zeros(rows(codz),1);
+  ulti=maxc(codz);
+  pri=minc(codz);
+  i=pri;
+    do while i<=ulti;
+    e=codz.==i;
+    z1=z1+e.*selif(z,ecod.==i);
+  i=i+1;
+  endo;
+retp(z1);
+endp;
+
+proc (10) = olsp(vardep,varindep);
+local y1,x1,bols1,sigmaols1,varcov1,tstud1,e1,r2corr1,obs1,dof1,rvarcov1,rtstud1,aic1,bic1;
+y1=vardep;
+x1=varindep;
+obs1=rows(y1);
+bols1=invpd(x1'x1)*x1'y1;
+sigmaols1=sqrt((y1'y1-bols1'x1'y1)/(obs1-cols(x1)));
+varcov1=sigmaols1^2*invpd(x1'x1);
+tstud1=bols1./sqrt(diag(varcov1));
+e1=y1-x1*bols1;
+rvarcov1=invpd(x1'x1)*x1'((e1*e1').*eye(rows(e1)))*x1*invpd(x1'x1);
+rtstud1=bols1./sqrt(diag(rvarcov1));
+r2corr1=1-(e1'e1)/((y1'y1)-rows(y1)*(meanc(y1)^2));
+dof1=obs1-cols(x1);
+
+aic1=ln(meanc(e1^2))+2*cols(x1)/rows(x1);   @ see Veerbek, p. 61 @
+bic1=ln(meanc(e1^2))+cols(x1)*ln(rows(x1))/rows(x1);   @ see Veerbek, p. 61 @
+
+print; print "    Coef.     t-stud     Robust-t "; 
+format /rds 10,4;
+print bols1~tstud1~rtstud1;
+print; print "Sigma: ";; print sigmaols1;
+print "Sigma2: ";; print sigmaols1^2;
+print "R2: ";; print r2corr1;
+print "dof: ";; print dof1;
+format /rds 5,0;
+print "Observations: ";; print obs1;
+format /rdt 8,4;
+print; print "AIC = ln(meanc(e^2))+2*k/N: ";; print aic1;
+print "BIC = ln(meanc(e^2))+k*ln(N)/N: ";; print bic1;
+
+retp(bols1,tstud1,rtstud1,sigmaols1,r2corr1,obs1,varcov1,rvarcov1,e1,dof1);
+endp;
+
+proc (8) = femp(vardep,varindep,i);
+local y1,x1,bols1,sigmae21,sigmae1,sigmaols1,ols1,varcov1,tstud1,e1,r2corr1,obs1,dof1;
+y1=within(vardep,i);
+x1=within(varindep,i);   
+obs1=rows(y1);
+bols1=invpd(x1'x1)*x1'y1;
+sigmaols1=sqrt((y1'y1-bols1'x1'y1)/(rows(y1)-maxc(i)-cols(x1)));
+varcov1=sigmaols1^2*invpd(x1'x1);
+tstud1=bols1./sqrt(diag(varcov1));
+e1=y1-x1*bols1;
+r2corr1=1-(e1'e1)/((y1'y1)-rows(y1)*(meanc(y1)^2));
+dof1=(obs1-maxc(i)-cols(x1));
+sigmae21=e1'e1/dof1;                    @ see 16-60, Greene, p. 475 @
+sigmae1=sigmae21^0.5;                   @ see 16-60, Greene, p. 475 @
+
+print; print "    Coef.     t-stud   "; 
+format /rds 10,4;
+print (bols1~tstud1);
+print; print "R2: ";; print r2corr1;
+print "dof: ";; print dof1;
+print "sigmae: ";; print sigmae1;
+print "sigmae2: ";; print sigmae21;
+format /rds 5,0;
+print "Observations: ";; print obs1;
+retp(bols1,tstud1,sigmae1,r2corr1,obs1,varcov1,e1,dof1);
+endp;
+
+proc (8) = betp(vardep,varindep,i,trend);
+local y1,x1,bols1,sigmaue21,sigmaue1,sigmaols1,ols1,varcov1,tstud1,e1,r2corr1,obs1,dof1;
+y1=selif(between(vardep,i),trend.==1);
+x1=selif(between(varindep,i),trend.==1);
+x1=x1~ones(rows(x1),1);
+obs1=rows(y1);
+bols1=invpd(x1'x1)*x1'y1;
+sigmaols1=sqrt((y1'y1-bols1'x1'y1)/(obs1-cols(x1)));
+varcov1=sigmaols1^2*invpd(x1'x1);
+tstud1=bols1./sqrt(diag(varcov1));
+e1=y1-x1*bols1;
+r2corr1=1-(e1'e1)/((y1'y1)-rows(y1)*(meanc(y1)^2));
+dof1=obs1-cols(x1);
+sigmaue21=e1'e1/dof1;                       @ see 16-62, Greene, p. 475 @
+sigmaue1=sigmaue21^0.5;
+print; print "    Coef.     t-stud   "; 
+format /rds 10,4;
+print (bols1~tstud1);
+print; print "R2: ";; print r2corr1;
+print "dof: ";; print dof1;
+print "sigmaue: ";; print sigmaue1;
+print "sigmaue2: ";; print sigmaue21;
+format /rds 5,0;
+print "Observations: ";; print obs1;
+retp(bols1,tstud1,sigmaue1,r2corr1,obs1,varcov1,e1,dof1);
+endp;
+
+proc (12) = remp(vardep,varindep,i,trend);
+local y1,x1,bols1,sigmaue21,sigmaue1,sigmau21,sigmau1,sigmae21,sigmae1,sigmaols1,ols1,varcov1,tstud1,e1,r2corr1,obs1,dof1,theta1,rho1,consadj1;
+
+y1=within(vardep,i);
+x1=within(varindep,i);   
+obs1=rows(y1);
+bols1=invpd(x1'x1)*x1'y1;
+e1=y1-x1*bols1;
+dof1=(obs1-maxc(i)-cols(x1));
+sigmae21=e1'e1/dof1;                    @ see 16-60, Greene, p. 475 @
+sigmae1=sigmae21^0.5;                   @ see 16-60, Greene, p. 475 @
+
+y1=selif(between(vardep,i),trend.==1);
+x1=selif(between(varindep,i),trend.==1);
+x1=x1~ones(rows(x1),1);
+obs1=rows(y1);
+bols1=invpd(x1'x1)*x1'y1;
+e1=y1-x1*bols1;
+dof1=obs1-cols(x1);
+sigmaue21=e1'e1/dof1;                       @ see 16-62, Greene, p. 475 @
+sigmaue1=sigmaue21^0.5;
+
+sigmau21=sigmaue21-sigmae21/T;              @ see 16-63, Greene, p. 475 @
+sigmau1=sigmau21^0.5;            
+
+format /rds 10,4;
+print;
+print "sigmae: ";; print sigmae1;
+print "sigmae2: ";; print sigmae21;
+print "sigmaue: ";; print sigmaue1;
+print "sigmaue2 (sigmae2/T+sigmau2): ";; print sigmaue21;
+print "sigmau: ";; print sigmau1;
+print "sigmau2: ";; print sigmau21;
+
+rho1=sigmau21/(sigmau21+sigmae21);
+print "Fraction of variance due to u_i (Rho): ";; print rho1;
+theta1=1-sigmae1/(sigmae21+T*sigmau21)^0.5;
+print "Theta (Greene, p. 470): ";; print theta1;
+
+y1=vardep-theta1*between(vardep,i);
+x1=varindep-theta1*between(varindep,i);
+x1=x1~ones(rows(x1),1)*(1-theta1);
+obs1=rows(y1);
+bols1=invpd(x1'x1)*x1'y1;
+sigmaols1=sqrt((y1'y1-bols1'x1'y1)/(obs1-cols(x1)));
+varcov1=sigmaols1^2*invpd(x1'x1);
+tstud1=bols1./sqrt(diag(varcov1));
+e1=y1-x1*bols1;
+r2corr1=1-(e1'e1)/((y1'y1)-rows(y1)*(meanc(y1)^2));
+dof1=obs1-cols(x1);
+
+print; print "    Coef.     t-stud   "; 
+format /rds 10,4;
+print (bols1~tstud1);
+
+print; print "R2: ";; print r2corr1;
+print "dof: ";; print dof1;
+format /rds 5,0;
+print "Observations: ";; print obs1;
+
+retp(bols1,tstud1,sigmaue1,r2corr1,obs1,varcov1,e1,dof1,rho1,theta1,sigmau1,sigmae1);
+endp;
+
+
+proc efianual(efivar,codyear);
+local j;
+format /rds 7,3;
+print; print "Annual statistics "; 
+print; print "   num    year    mean     std    min     max";
+j=minc(codyear);
+do while j<=maxc(codyear);
+print sumc(codyear.==j);; 
+print meanc(selif(codyear~efivar,codyear.==j))';; 
+print stdc(selif(efivar,codyear.==j))';;
+print minc(selif(efivar,codyear.==j))';;
+print maxc(selif(efivar,codyear.==j))'; 
+j=j+1;
+endo;
+retp(efivar);
+endp;
