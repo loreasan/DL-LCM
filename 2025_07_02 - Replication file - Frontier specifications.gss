@@ -1,0 +1,2254 @@
+library maxlik,pgraph;
+new;
+maxset;
+outwidth 250;
+cls;
+
+@ ------------------------------------------------------------- @
+@ ------------------------------------------------------------- @
+@ ------------------------------------------------------------- @
+@ --- CODES USED TO GET THE PARAMETER ESTIMATES OF THE PAPER -- @
+@ -- "Latent class models with persistence in regime changes" - @
+@ ---------------" A distributed lag analysis " --------------- @
+@ ------------------------------------------------------------- @
+@ ----------------------- June 20, 2025 ----------------------- @
+@ ------------- Authors: Luis Orea and Hervé Dapko ------------ @
+@ ------------------------------------------------------------- @
+@ ------------------------------------------------------------- @
+@ ------------------------------------------------------------- @
+
+@ --------------- SUMMARY OF TASKS & REMARKS ------------------ @
+@                                                               @
+@ This script file carries out the following TASKS:             @
+@                                                               @
+@ TASK 1: READING the dataset.                                  @
+@ TASK 2: Examination of the structure of the panel dataset.    @
+@ TASK 3: Selection of variables for the production model.      @
+@ TASK 4: Estimation of basic OLS and ML models.                @
+@ TASK 5: ESTIMATION OF FRONTIER MODELS (I).                    @
+@   - Standard 1-class heteroscedastic SF model LCM             @
+@   - Standard 2-class frontier LCM                             @
+@   - 2-class DL-LCM with exogenous lambda (not in the paper)   @
+@   - 2-class DL-LCM with endogenous but homoscedastic lambda   @
+@   - 2-class DL-LCM with endogenous but heteroscedastic lambda @
+@ TASK 6: ESTIMATION OF FRONTIER MODELS (II).                   @
+@   - Simplifed codes for the 2-class frontier DL-LCM model     @
+@   - 3-class frontier DL-LCM                                   @
+@ ------------------------------------------------------------- @
+
+
+@ ------------------------------------------------------------- @
+@ ------------------------------------------------------------- @
+@ --------------- TASK 1: READING the dataset ----------------- @
+@ ------- (the 1st variable should identify the firm) --------- @
+@ ------ (the 2nd variable should identify the period) -------- @
+@ ------------------------------------------------------------- @
+@ ------------------------------------------------------------- @
+
+@ ------ output file -----@
+@output file=C:\Users\luiso\Dropbox\research\DistributedLag_LCM\Replication_files\Frontier_parameters.out reset;@
+
+@ ------- data file ------- @
+load data[2430,17]=C:\Users\luiso\Dropbox\research\DistributedLag_LCM\Replication_files\replication_data.txt;
+
+@ ------------------------------------------------------------- @
+@ ------------------------------------------------------------- @
+@ - TASK 2: Examination of the structure of the panel dataset - @
+@ ------------------------------------------------------------- @
+@ ------------------------------------------------------------- @
+
+@ Variables used here @
+cod=recod(data[.,1]);               @ set here the column of farms codes @
+t=data[.,2]-minc(data[.,2])+1;      @ set here the column of the year    @
+
+tints=tmayi(cod); iobs=maxc(cod); tmay=maxc(t); obs=rows(data);
+
+format /rds 4,0;
+it=zeros(iobs,tmay); stiv=0;
+i=1;
+do while i<=iobs;
+itv=0; j=1; 
+do while j<=tmay; 
+e=cod.==i .and t.==j; it[i,j]=sumc(e); itv=itv+e; j=j+1; endo;
+stiv=stiv+itv*sumc(itv);
+i=i+1;
+endo;
+
+gapi=zeros(iobs,1); e0i=zeros(iobs,1); gapiv=0; e0iv=0;
+i=1;
+do while i<=iobs;
+j=2; do while j<=tmay; e=it[i,j]./=it[i,j-1];  e0=((it[i,j]-it[i,j-1]).==1 .and sumc(it[i,1:j-1]').>=1); gapi[i]=gapi[i]+sumc(e); e0i[i]=e0i[i]+sumc(e0); j=j+1; endo;
+ei=cod.==i; gapiv=gapiv+ei*gapi[i]; e0iv=e0iv+ei*e0i[i];
+i=i+1;
+endo;
+
+sti=sumc(it');
+print; 
+print "Non-selected data"; print;
+print "  cod  gap   e0";; print seqa(1,1,tmay)';; print " sti"; print (seqa(1,1,iobs)~gapi~e0i~it~sti)|(0~0~0~sumc(it~sti)');
+print; print "maxc(tints): ";; print maxc(tints);
+
+@ -------------------------------------- @
+@ ------ Second sample selection ------- @
+@ -------------------------------------- @
+
+e=stiv.>=1;             @ this implies that we use the previous dataset @
+e=tints.>=maxc(tints) .and data[.,1].<=2009; 
+e=gapiv.<=2 .and e0iv.==0; 
+e=tints.>=maxc(tints)-1 .and data[.,1].<=2014;
+
+@ -------------------------------------- @
+@ --- Minimum number of observations --- @
+@ -------------------------------------- @
+minobs=3;
+
+@ balanced panel dataset @
+e=tints.>=maxc(tints);    
+
+@ Sequencial but unbalance panel @
+e=gapiv.<=2 .and e0iv.==0; 
+
+@ Sequencial but unbalance panel with minimum number of observations @
+e=tints.>=minobs .and gapiv.<=2 .and e0iv.==0; 
+
+@ --------------------- @
+@ -- final selection -- @
+@ --------------------- @
+data=selif(data,e.==1); 
+
+@ -------------------------------------------------------- @
+@ -- Examining again the structure of the panel dataset -- @
+@ -------------------------------------------------------- @
+
+@ New data @
+cod=recod(data[.,1]);               @ set here the column of farms codes @
+t=data[.,2]-minc(data[.,2])+1;      @ set here the column of the year    @
+
+tints=tmayi(cod); iobs=maxc(cod); tmay=maxc(t); obs=rows(data);
+
+format /rds 4,0;
+it=zeros(iobs,tmay); stiv=0;
+i=1;
+do while i<=iobs;
+itv=0; j=1; 
+do while j<=tmay; 
+e=cod.==i .and t.==j; it[i,j]=sumc(e); itv=itv+e; j=j+1; endo;
+stiv=stiv+itv*sumc(itv);
+i=i+1;
+endo;
+
+gapi=zeros(iobs,1); e0i=zeros(iobs,1); gapiv=0; e0iv=0;
+i=1;
+do while i<=iobs;
+j=2; do while j<=tmay; e=it[i,j]./=it[i,j-1];  e0=((it[i,j]-it[i,j-1]).==1 .and sumc(it[i,1:j-1]').>=1); gapi[i]=gapi[i]+sumc(e); e0i[i]=e0i[i]+sumc(e0); j=j+1; endo;
+ei=cod.==i; gapiv=gapiv+ei*gapi[i]; e0iv=e0iv+ei*e0i[i];
+i=i+1;
+endo;
+
+sti=sumc(it');
+print; 
+print "Selected data (continuous or balanced dataset)"; print;
+print "  cod  gap   e0";; print seqa(1,1,tmay)';; print " sti"; print (seqa(1,1,iobs)~gapi~e0i~it~sti)|(0~0~0~sumc(it~sti)');
+
+print; 
+print " ------ General information of the panel dataset ------- ";
+print "Observations: ";; print obs;
+print "Firms: ";; print iobs;
+print "Years: ";; print tmay;
+print "First year: ";; print minc(data[.,1]);    @ poner aqui el año @
+print "Last year: ";; print maxc(data[.,1]);     @ poner aqui el año @
+print "Minimum number of observations: ";; print minobs;
+
+wait;
+
+@ -------------------------------------------------------- @
+@ ------------------- variable labels -------------------- @
+@ -------------------------------------------------------- @
+
+@ REPLICATION data @
+cod_expl=data[.,1];
+cod=recod(data[.,1]);
+year=data[.,2];
+lnM=data[.,3];
+lnV=data[.,4];
+lnF=data[.,5];
+lnA=data[.,6];
+lnL=data[.,7];
+t=data[.,8];
+lnY=data[.,9];
+uthasalapro=data[.,10];
+qcelger=data[.,11];
+lpievac=data[.,12];
+lvacsau=data[.,13];
+lsau=data[.,14];
+lnPY=data[.,15];
+cod_coma=data[.,16];
+qprogra=data[.,17];
+
+unos=ones(rows(data),1);
+
+@ -------------- First observed year dummy ------------ @
+@ note: it works even for unbalanced panel datasets     @
+
+tini=0; tfinal=0;
+i=1;
+do while i<=iobs;
+  ei=cod.==i; 
+  ti=selif(t,cod.==i); 
+  tfinal=tfinal+maxc(ti).*ei; 
+  tini=tini+minc(ti).*ei; 
+i=i+1;
+endo;
+
+@ --- Computing the relative time variable --- @
+tr=t-tini+1;
+
+@ variables in deviations @
+lnM=des(lnM);
+lnV=des(lnV); 
+lnF=des(lnF); 
+lnA=des(lnA); 
+lnL=des(lnL); 
+lpievac=des(lpievac); 
+lvacsau=des(lvacsau);
+lsau=des(lsau); 
+uthasalapro=des(uthasalapro);
+qcelger=des(qcelger);
+
+@ time effects and trends @
+y05=year.==2005; y06=year.==2006; y07=year.==2007; y08=year.==2008; y09=year.==2009; y10=year.==2010; y11=year.==2011; y12=year.==2012; y13=year.==2013; y14=year.==2014;
+dt=y06~y07~y08~y09~y10~y11~y12~y13~y14;
+t2=0.5*t^2; 
+
+@ --------------------------------------------------------------- @
+@ --------------------------------------------------------------- @
+@ --- TASK 3: Selection of variables for the production model --- @
+@ --------------------------------------------------------------- @
+@ --------------------------------------------------------------- @
+
+format /rds 12,3;
+
+@ ---- dependent variable ---- @
+y=lnY;
+let namey= lnY;
+
+@ ---------------------------- @
+@ -- Explanatory variables --- @
+@ ---------------------------- @
+
+@ TL with TC @
+x=unos~tl(lnM~lnV~lnF~lnA~lnL)~dt;
+let namex= _cons M V F A L M2 V2 F2 A2 L2 MV MF MA ML VF VA VL FA FL AL y06 y07 y08 y09 y10 y11 y12 y13 y14;
+
+print; print "Means of the X variables: "; print meanc(x)'; 
+
+@ ----------------------------- @
+@ -- Efficiency determinants -- @
+@ ----------------------------- @
+
+z=unos~uthasalapro;
+let namez= lnsu uthasalapro;
+
+z=unos;
+let namez= LNSU;
+
+z=unos~uthasalapro~qcelger;
+let namez= lnsu uthasalapro qcelger;
+
+print; print "Means of the z variables: "; print meanc(z)'; 
+
+@ ----------------------------------------------- @
+@ ----- Logit variables (prior probabilities) --- @
+@ ----------------------------------------------- @
+
+q=unos;
+let nameq= unos;
+
+q=unos~lpievac~lvacsau;
+let nameq= unos lpievac lvacsau;
+
+print; print "Means of the q variables: "; print meanc(q)'; 
+
+@ ----- INITIAL logit variables --- @
+qini=q;
+
+@ ----------------------------------------------- @
+@ ----------- Determinants of lambda ------------ @
+@ ----------------------------------------------- @
+
+@ note: I use "ini" to recover it after estimating the homogeneous DL-LCM frontier model @
+
+lini=unos~lsau;
+let namelini= lambda0 lsau;
+
+@ ----------------------------------------------- @
+@ ----------- Determinants of lambda ------------ @
+@ ----------------------------------------------- @
+
+l=unos~lsau;
+let namel= lambda0 lsau;
+
+l=unos;
+let namel= lambda0;
+
+@ ----- INITIAL logit variables --- @
+qini=q;
+
+@ -------------------------------------------------------- @
+@ ------ Data matrix (not relevant for estimation) ------- @
+@ -------------------------------------------------------- @
+
+data=y~x~z~q~cod~t~lpievac; 
+
+@ Number of variables @
+nx=cols(x); nz=cols(z); nq=cols(q); 
+print; print "nx~nz~nq with    missings: ";; print nx~nz~nq; 
+data=packr(data); y=data[.,1]; x=data[.,2:nx+1]; z=data[.,nx+2:nx+nz+1]; q=data[.,nx+nz+2:cols(data)-3]; cod=data[.,cols(data)-2]; t=data[.,cols(data)-1]; lpievac=data[.,cols(data)];
+data=y~x~z~q;
+
+@ Number of variables @
+nx=cols(x); nz=cols(z); nq=cols(q); 
+print "nx~nz~nq without missings: ";; print nx~nz~nq;
+
+@ all names @
+vardata=namey|namex|namez|nameq;
+
+format /rds 4,0;
+print; 
+print "Frontier explanatory variables: ";; print nx;
+print "Efficiency determinants:        ";; print nz;
+print "Logit variables:                ";; print nq;
+
+print; 
+print "-------------------------------------------------------- ";
+print "------ Clarifying notes on variables' labelling -------- ";
+print "-------------------------------------------------------- ";
+print; 
+print "Intercepts: ";
+print "   _CONS lNSU LNSV UNOS are estimated intercepts.";
+print; 
+print "Input variables: ";
+print "   (V M F A L) is (X1 X2 X3 X4 X5) in the paper.";
+print; 
+print "Efficiency determinants: ";
+print "   (UTHASALA QCELGER) is (d1 d2) in the paper.";
+print; 
+print "Prior probability determinants: ";
+print "   (LPIEVAC LVACSAU) is (q1 q2) of the standard LCM specification.";
+print "   (LPIEVAC LVACSAU) is (m1 m2) of the DL-LCM specification.";
+print "   LAM_0 is the coefficient of the time-trend variable of the DL-LCM specification.";
+print; 
+print "Autoregressive coefficient: ";
+print "   LAMBDA0 is the estimated intercept of the autoregressive coefficient.";
+print "   LSAU is z in the paper."; 
+
+wait;
+
+@ ----------------------------------------------------- @
+@ ------- Procedure Distributed lag variables --------- @
+@ ----------------------------------------------------- @
+
+@ note: it works even for unbalanced panel datasets     @
+@       due to the loop goes from tmin_i to tmax_i      @
+@       regardless the value of t of each firm          @
+
+proc dislag2(q1,cod1,t1,lambdavalues);
+local m1,ti1,ti0,ti,numit,i,j,h,rowj,seqrow,ei,ej,eh,rowh,m0;
+format /rds 8,4;
+m1=zeros(rows(q1),cols(q1));
+seqrow=seqa(1,1,rows(q1));
+i=1;
+do while i<=maxc(cod1);
+  ei=cod1.==i; ti=selif(t1,cod1.==i); ti1=maxc(ti); ti0=minc(ti); numit=ti1-ti0+1;
+  j=ti0; 
+  do while j<=ti1; 
+    ej=cod1.==i .and t1.==j; 
+    rowj=sumc(ej.*seqrow); ej=seqrow.==rowj;
+    m0=zeros(1,cols(q1));
+    h=ti0; 
+    do while h<=j; 
+      eh=cod1.==i .and t1.==h; 
+      rowh=sumc(eh.*seqrow); eh=seqrow.==rowh;
+      m0=m0+lambdavalues[rowj]^(j-h)*q1[rowh,.];        @ ----- without (1-lamda) -------- @
+    h=h+1; 
+    endo;
+    m1[rowj,.]=m0;
+  j=j+1; 
+  endo;
+i=i+1;
+endo;
+retp(m1);
+endp;
+
+@ ----------------------------------------------------- @
+@ --- sample selection: first observations dropped ---- @
+@ ----------------------------------------------------- @
+
+@ Note: I do not know why I wrote these codes           @
+@       Itord= matrix with each firm's relative t (tr)  @
+
+@ --- ordered observations --- @
+itord=zeros(iobs,tmay); itordv=0;
+i=1;
+do while i<=iobs;
+    j=1; e=0;
+    do while j<=tmay;
+    ei=cod.==i .and t.==j;
+    if it[i,j]==1; e=e+1; itord[i,j]=e; itordv=itordv+ei*e; endif;
+    j=j+1;
+    endo;
+i=i+1;
+endo;
+format /rds 4,0;
+
+@ ------------------------------------------------- @
+@ ------------------------------------------------- @
+@ ---- TASK 4: basic OLS and ML to start with ----- @
+@ ------------------------------------------------- @
+@ ------------------------------------------------- @
+
+@ OLS regression @
+print; print "------------- OLS regression ------------ ";
+{bols,tstud,rtstud,sigmaols,r2corr,obs,varcov,rvarcov,e,dof} = olsp(y,x); 
+e=y-x*bols; e2=e^2; e3=e^3; e4=e^4;
+m2=meanc(e2); m3=meanc(e3);
+b1star=m3/(6*m2^3/obs)^0.5;
+print; print "Normality tests: "; print "Square-root b1*~N(0,1): ";; print b1star;
+
+@ ML regression: Normal @
+print; print "------------- ML regression: Normal  ------------ ";
+parini=bols*0.9|ln(sigmaols); mvname=namex|("LNSV")';
+
+let parini=
+12.615447660108 
+ 0.388712537277 
+ 0.435118662050 
+ 0.112021208945 
+ 0.100019836369 
+ 0.050016064687 
+ 0.105261464474 
+ 0.264090897100 
+ 0.096006726404 
+ 0.021908648789 
+ 0.026272588683 
+-0.242903163625 
+ 0.015339571115 
+-0.004702348080 
+-0.061121444760 
+-0.076236469721 
+ 0.118477392196 
+ 0.142292785749 
+-0.047505885064 
+-0.007995902450 
+-0.032888098181 
+ 0.023058208412 
+-0.045953440431 
+-0.140077279142 
+-0.094827763156 
+-0.080261138786 
+-0.125980074007 
+-0.133102147696 
+-0.151844983163 
+-0.111054799058 
+-1.928827391143
+;
+
+__title="ML estimates (Normal)";
+_max_CovPar=1; _max_Algorithm=2;  _max_ParNames=mvname; _max_GradTol=0.00001;
+{ parnor,f,g,cov,retcode }=maxlik(data,0,&normal,parini); 
+call maxprt(parnor,f,g,cov,retcode);
+format /rds 15,12;
+print; print "ML normal parameters: "; print parnor; 
+
+@ --- Likehood function: normal distribution ---- @
+proc normal(parml,data);
+local b,e1,y1,x1,sigma,lnfv;
+b=(parml[1:rows(parml)-1]); 
+sigma=exp(parml[rows(parml)]);    @ ojo: se modeliza lnsigma @
+e1=y-x*b; 
+lnfv=-0.5*ln(2*pi)-0.5*ln(sigma^2)-0.5*(e1^2)/sigma^2;
+retp(lnfv);
+endp;
+
+
+@ ---------------------------------------------- @
+@ ---------------------------------------------- @
+@ --- TASK 5: ESTIMATION OF FRONTIER MODELS ---- @
+@ ---------------------------------------------- @
+@ ---------------------------------------------- @
+
+print; 
+print "--------------------------------------------------------------------- ";
+print "--------- Table 2. Parameter estimates. Pooled SF model  ------------ ";
+print "--------------------------------------------------------------------- ";
+
+wait;
+
+parini=bols|ln(sigmaols)|ones(nz,1)*0;
+
+let parini=
+12.717374614577
+0.352163944388
+0.483246962811
+0.102755511188
+0.086196734289
+0.041569995102
+0.088027790373
+0.328615686515
+0.075172412050
+0.007574333533
+0.020341609050
+-0.215213828161
+0.015093525397
+0.006618534140
+-0.060286250029
+-0.087751620770
+0.086727807525
+0.108064740638
+-0.030849927815
+-0.003893328686
+-0.016287906441
+0.022473892489
+-0.044612133070
+-0.123607548318
+-0.088118602477
+-0.071871074632
+-0.115192520704
+-0.120950067038
+-0.135032801246
+-0.096979276694
+-2.230491469127
+-2.049493616439
+-0.275353450234
+0.584565062396
+;
+
+@ --------------------------------------------- @
+@ -- maximization of the likelihood function -- @
+@ --------------------------------------------- @
+
+mvname1=namex|("LNSV"|namez);
+__title="Table 2. Parameter estimates. Single-class pooled SF model"; 
+_max_CovPar=2; _max_Algorithm=2;  _max_ParNames=mvname1; _max_GradTol=0.0001;
+{ parpro1,f,g,cov,retcode }=maxlik(data,0,&halfalthet,parini); 
+call maxprt(parpro1,f,g,cov,retcode);
+format /rds 15,12;
+print; 
+print "Half-normal HETEROSCEDASTIC model"; print parpro1;
+
+@ --- Likehood function: half-normal with one group (see almanidis et al.) HETEROSCEDASTICO --- @
+proc halfalthet(parml,dataz);
+local b,y1,x1,e1,sigma,lnfv,sigmau,mu,sigmav,lambda,bz;
+b=parml[1:rows(parml)-1-nz]; 
+sigmav=exp(parml[rows(parml)-nz]); 
+bz=parml[rows(parml)-nz+1:rows(parml)];
+sigmau=exp(z*bz);
+e1=y-x*b;
+e1=e1;     @ insert  minus sign if cost funtion  @
+sigma=(sigmau^2+sigmav^2)^0.5; lambda=sigmau./sigmav;
+lnfv=-ln(1/2)-ln(sigma)+ln(pdfn(e1./sigma))+ln(1-cdfn(e1.*lambda./sigma));   @ e1=v-u @
+retp(lnfv);
+endp;
+
+print; 
+print " -------------------------------- ";
+print " -- Table 4. Efficiency scores -- ";
+print " -------------------------------- ";
+
+@ ---Efficiency scores: Half-normal (see almanidis et al.)--- @
+print; 
+print "Efficiency scores: Standard SF pooled model";
+b=parpro1[1:rows(parpro1)-1-nz]; 
+sigmav=exp(parpro1[rows(parpro1)-nz]); 
+bz=parpro1[rows(parpro1)-nz+1:rows(parpro1)];
+sigmau=exp(z*bz);
+e=y-x*b;
+e=e;   @ insert  minus sign if cost funtion  @
+sigma=(sigmau^2+sigmav^2)^0.5; mua=(-e.*sigmau^2)./sigma^2; sigmaa=sigmau*sigmav./sigma;     @ e=v-u @
+uhat=mua+sigmaa.*(pdfn(-mua./sigmaa))./(1-cdfn(-mua./sigmaa));
+ef=exp(-uhat); call efianual(ef,t); call efianual(ef,ones(rows(t),1));
+@format /rds 7,3;  print; print cod~uhat~ef;@
+
+
+print; 
+print " --------------------------------------------------- ";
+print " -------- Table 2. Standard frontier LCM ----------- ";
+print " --------------------------------------------------- ";
+
+wait;
+
+parini2=parpro1|parini|(ones(cols(q),1)*0);
+parini2=parini|parpro1|-1|1|1;
+parini2=parpro1|parpro1|0|1|2;
+parini2=parpro1|parpro1|0;
+
+let parini2=
+12.724719019525
+0.188348091029
+0.726980181133
+0.043049624322
+0.092470293628
+0.033406388749
+0.128106241500
+0.295980567200
+0.041292110253
+0.080456152367
+0.020898177797
+-0.108970585332
+0.118408186074
+-0.085300020234
+0.002285065953
+-0.208960660660
+0.008312267533
+-0.004691857270
+0.014431609832
+-0.020941622778
+-0.008129318243
+0.010332436650
+-0.037554634397
+-0.093610153775
+-0.075603070447
+-0.040196333267
+-0.063117741169
+-0.059991064492
+-0.072929787691
+-0.026999529735
+-2.660184680503
+-2.401891437287
+0.442381877827
+0.726192860573
+12.683510292638
+0.405177491169
+0.349587695953
+0.130638520587
+0.091920611469
+0.043392281681
+0.121068012858
+0.411811362171
+0.125262560616
+-0.049448540031
+-0.027073272833
+-0.419835824513
+0.010249076892
+0.099450277081
+-0.076016686383
+-0.032485765023
+0.113922617009
+0.236220281626
+-0.078131729711
+-0.011983703087
+-0.040141378239
+0.033532495108
+-0.042653351698
+-0.126311080339
+-0.075339481095
+-0.080637665523
+-0.127329364207
+-0.135054018813
+-0.162305948870
+-0.123260888139
+-2.163420395271
+-2.222542157215
+-1.411991185644
+0.535628079468
+-0.297339494148
+3.655236990287
+-0.081344114703
+;
+
+@ Checking parameters @
+par=parini2;
+parmlet=par[1:rows(par)-cols(q)];
+parmle1=parmlet[1:rows(parmlet)/2];
+parmle2=parmlet[rows(parmlet)/2+1:rows(parmlet)];
+par2log=par[rows(par)-cols(q)+1:rows(par)];
+prob1=exp(q*par2log)./(exp(q*par2log)+1);
+prob2=1-prob1;
+print "SFA GROUP 1:     ";; print parmle1';
+print "SFA GROUP 2:     ";; print parmle2';
+print "Logit variables: ";; print par2log';
+
+@ --------------------------------------------------------------------- @
+@ -- maximization of the likelihood function (Standard frontier LCM) -- @
+@ --------------------------------------------------------------------- @
+
+mvname2=mvname1|mvname1|nameq;
+__title="Table 2. Standard latent class model"; 
+_max_CovPar=1; _max_Algorithm=2;  _max_ParNames=mvname2; _max_GradTol=0.0001;
+{ parpro2,f,g,cov,retcode }=maxlik(data,0,&halfhet2,parini2); 
+call maxprt(parpro2,f,g,cov,retcode);
+format /rds 15,12;
+print; print "Standard frontier LCM"; print parpro2;
+
+@ -- Separating the set of parameters into several groups -- @
+format /rds 9,4;
+print; print "Standard frontier LCM"; 
+par=parpro2;
+parmlet=par[1:rows(par)-cols(q)];
+parmle1=parmlet[1:rows(parmlet)/2]; 
+parmle2=parmlet[rows(parmlet)/2+1:rows(parmlet)];
+par2log=par[rows(par)-cols(q)+1:rows(par)];
+print "SFA GROUP 1:     ";; print parmle1';
+print "SFA GROUP 2:     ";; print parmle2';
+print "Logit variables: ";; print par2log';
+
+@ ----- Likehood function: half-normal HETEROSCEDASTIC model - two groups  ---- @
+proc halfhet2(par,data);
+local parmlet,par2log,parmle1,parmle2,prob1,prob2,lf,f;
+parmlet=par[1:rows(par)-cols(q)];
+parmle1=parmlet[1:rows(parmlet)/2];
+parmle2=parmlet[rows(parmlet)/2+1:rows(parmlet)];
+par2log=par[rows(par)-cols(q)+1:rows(par)];
+prob1=exp(q*par2log)./(exp(q*par2log)+1);
+prob2=1-prob1;
+f=exp(halfalthet(parmle1,data)).*prob1+exp(halfalthet(parmle2,data)).*prob2;
+lf=ln(f);
+retp(lf);
+endp;
+
+@ ----- posterior class probabilities - half-normal HETEROSCEDASTIC model - two groups ---- @
+proc pr2halhet(par,data);
+local parmlet,parmle1,parmle2,parmle3,parlog,parlog1,parlog2,
+prob1,prob2,prob3,lf,f,f1,f2,f3,post1,post2,post3;
+parmlet=par[1:rows(par)-cols(q)];
+parmle1=parmlet[1:rows(parmlet)/2]; parmle2=parmlet[rows(parmlet)/2+1:rows(parmlet)];
+parlog=par[rows(par)-cols(q)+1:rows(par)];
+prob1=exp(q*parlog)./(exp(q*parlog)+1); 
+prob2=1-prob1;
+f1=exp(halfalthet(parmle1,data)).*prob1; f2=exp(halfalthet(parmle2,data)).*prob2;
+f=f1+f2; post1=f1./f; post2=f2./f;
+retp(100*(prob1~prob2~post1~post2~exp(halfalthet(parmle1,data))~exp(halfalthet(parmle2,data))));
+endp;
+
+@ ----------------------------------------------------- @
+@ -- Descriptive statistics of the sample separation -- @
+@ ----------------------------------------------------- @
+
+print; print "Posterior class probabilities (TECH=1, TECH=2): "; 
+format /rds 6,2;
+prob2g=pr2halhet(parpro2,data);
+g1=prob2g[.,3].>=prob2g[.,4]; g2=prob2g[.,3].<prob2g[.,4];
+
+@ ---------------------------------------------- @
+@ -- logged relative prior probability (lnRP) -- @
+@ ---------------------------------------------- @
+lnrpprior=ln(prob2g[.,1]./(100-prob2g[.,1])); 
+
+print; print "total average: "; print meanc(prob2g[.,3])~meanc(prob2g[.,4]);
+print "number: "; print sumc(g1)~sumc(g2);
+print "partial average: "; print meanc(selif(prob2g[.,3],g1));; print meanc(selif(prob2g[.,4],g2));
+print "partial maximum: "; print maxc(selif(prob2g[.,3],g1));; print maxc(selif(prob2g[.,4],g2));
+print "partial minimum: "; print minc(selif(prob2g[.,3],g1));; print minc(selif(prob2g[.,4],g2));
+print "partial standard deviation: "; print stdc(selif(prob2g[.,3],g1));; print stdc(selif(prob2g[.,4],g2));
+
+print; print "Posterior probabilities (class 1): "; print;
+call efianual(selif(prob2g[.,3],g1),selif(t,g1)); call efianual(selif(prob2g[.,3],g1),ones(rows(selif(t,g1)),1));
+print; print "Posterior probabilities (class 2): "; print;
+call efianual(selif(prob2g[.,4],g2),selif(t,g2)); call efianual(selif(prob2g[.,4],g2),ones(rows(selif(t,g2)),1));
+print;
+
+@ --------------------------------------------------- @
+@ -- matrices to be extended with other LCM models -- @
+@ --------------------------------------------------- @
+prob2gvec=cod_expl~cod~t~prob2g;
+lnrpvec=cod~t~lnrpprior;
+lambdavec=cod~t~zeros(rows(t),1);
+
+print; 
+print " -------------------------------- ";
+print " -- Table 4. Efficiency scores -- ";
+print " -------------------------------- ";
+
+@ ---Efficiency scores: Half-normal (see almanidis et al.) - two groups --- @
+parmlet=parpro2[1:rows(parpro2)-cols(q)];
+parmlet1=parmlet[1:rows(parmlet)/2];
+parmlet2=parmlet[rows(parmlet)/2+1:rows(parmlet)];
+print; print "Efficiency scores: Intensive farms";
+b=parmlet1[1:rows(parmlet1)-1-nz]; sigmav=exp(parmlet1[rows(parmlet1)-nz]); bz=parmlet1[rows(parmlet1)-nz+1:rows(parmlet1)];
+sigmau=exp(z*bz);
+e=y-x*b;
+e=e;   @ insert  minus sign if cost funtion  @
+sigma=(sigmau^2+sigmav^2)^0.5; mua=(-e.*sigmau^2)./sigma^2; sigmaa=sigmau*sigmav./sigma;     @ e=v-u @
+uhat=mua+sigmaa.*(pdfn(-mua./sigmaa))./(1-cdfn(-mua./sigmaa));
+ef=exp(-uhat); 
+call efianual(selif(ef,g1),selif(t,g1)); call efianual(selif(ef,g1),ones(rows(selif(t,g1)),1));
+@format /rds 7,3;  print; print cod~uhat~ef;@
+
+print; print "Efficiency scores: Extensive farms";
+b=parmlet2[1:rows(parmlet2)-1-nz]; sigmav=exp(parmlet2[rows(parmlet2)-nz]); bz=parmlet2[rows(parmlet2)-nz+1:rows(parmlet2)];
+sigmau=exp(z*bz);
+e=y-x*b;
+e=e;   @ insert  minus sign if cost funtion  @
+sigma=(sigmau^2+sigmav^2)^0.5; mua=(-e.*sigmau^2)./sigma^2; sigmaa=sigmau*sigmav./sigma;     @ e=v-u @
+uhat=mua+sigmaa.*(pdfn(-mua./sigmaa))./(1-cdfn(-mua./sigmaa));
+ef=exp(-uhat); 
+call efianual(selif(ef,g2),selif(t,g2)); call efianual(selif(ef,g2),ones(rows(selif(t,g2)),1));
+@format /rds 7,3;  print; print cod~uhat~ef;@
+
+
+print; 
+print "--------------------------------------------------------------- ";
+print "------ Frontier LCM with persistence in regime changes  ------- ";
+print "--------(EXOGENOUS lambda autoregressive coefficient) --------- ";
+print "- (Not included in the paper. Only for illustration purposes) - ";
+print "--------------------------------------------------------------- ";
+
+wait;
+
+@ ---------------------------- @
+@ -- EXOGENOUS lambda value -- @
+@ ---------------------------- @
+lambda=0.5;     @ set here the EXOGENOUS lambda value @
+
+@ -- other lambda definitions -- @
+lambda=lambda*unos;
+lambdat=lambda.^t;        @ for balanced panel datasets @
+lambdat2=lambda.^tr;      @ for unbalanced panel datasets = comprobado @
+let namelam= lam_0;       @ Ahora sólo recoge delta*A0 @
+lambdat=lambdat2;
+format /rds 3,2;
+print "Degree of persistence meanc(lambda)= ";; print meanc(lambda); print;
+
+@ ----- FINAL logit variables for LCM with exogenous distributed lags OUTSIDE --- @
+m=dislag2(q,cod,t,lambda);
+q=m~lambdat;
+
+print "---------------------------------------------------- "; 
+print "----------------- q with (1-lambda) ---------------- "; 
+print "---------------------------------------------------- "; 
+q=(1-lambda).*(m~lambdat);            @ ojo: ahora m=dislag2 y lambdat no debe incluir (1-lambda) @
+
+@ ------------- ML estimates ----------- @
+parini2=parini|parpro1|(ones(cols(qini),1)*0)|-1;
+parini2=parpro2|1;
+
+let parini2=
+12.72939551177
+0.18583550486
+0.71615607294
+0.05152425216
+0.09295558153
+0.03431379145
+0.14268914205
+0.25681124965
+0.04368003597
+0.07465473243
+0.02417309205
+-0.10068588712
+0.10745738681
+-0.08957348461
+-0.01348997755
+-0.19520837868
+0.00778250286
+0.02418602429
+0.01925391976
+-0.02893386920
+-0.00524600751
+0.00822271672
+-0.03878706181
+-0.08974782827
+-0.08015433637
+-0.04295778936
+-0.06596791744
+-0.06711628735
+-0.08000512837
+-0.03662924178
+-2.63664080840
+-2.35312336390
+0.34030380800
+0.72908452050
+12.68796874892
+0.40945104783
+0.35026970622
+0.12474173939
+0.09118637155
+0.04570581844
+0.11966211529
+0.46140940295
+0.13409934265
+-0.04784034012
+-0.02571234755
+-0.43536106889
+0.01607842348
+0.10689445234
+-0.06992106184
+-0.03594194628
+0.11446663668
+0.22148768269
+-0.09447466683
+-0.00817670041
+-0.03759163575
+0.03019868540
+-0.04859654465
+-0.14151254206
+-0.07997578839
+-0.09038245601
+-0.13825682328
+-0.14360469094
+-0.17499459887
+-0.13024367295
+-2.17216032327
+-2.19499546509
+-1.23577875744
+0.52990886871
+-0.00278442654
+5.62452556557
+-0.43809895686
+-2.39996717339
+;
+
+
+@ --------------------------------------------- @
+@ -- maximization of the likelihood function -- @
+@ --------------------------------------------- @
+
+mvname2=mvname1|mvname1|nameq|namelam;
+print; print rows(parini2);; print rows(mvname2); 
+__title="LCM - EXOGENOUS lambda autoregressive coefficient"; 
+_max_CovPar=1; _max_Algorithm=2;  _max_ParNames=mvname2; _max_GradTol=0.0001;
+{ parpro2,f,g,cov,retcode }=maxlik(data,0,&halfhet2,parini2); 
+call maxprt(parpro2,f,g,cov,retcode);
+
+format /rds 15,12;
+print; print "LCM - EXOGENOUS lambda autoregressive coefficient"; print parpro2;
+
+format /rds 9,4;
+print; print "LCM - EXOGENOUS lambda autoregressive coefficient"; 
+par=parpro2;
+parmlet=par[1:rows(par)-cols(q)];
+parmle1=parmlet[1:rows(parmlet)/2]; 
+parmle2=parmlet[rows(parmlet)/2+1:rows(parmlet)];
+par2log=par[rows(par)-cols(q)+1:rows(par)];                  @ incluye el coef de lambdat @
+par2log=par[rows(par)-cols(q)+1:rows(par)-cols(lambdat)];                @ ahora no @   
+parlambda=par[rows(par)-cols(lambdat)+1:rows(par)];                    
+print;
+print "Meanc(lambda)= ";; print meanc(lambda);; 
+print; 
+print "SFA GROUP 1:     ";; print parmle1';
+print "SFA GROUP 2:     ";; print parmle2';
+print "Logit variables: ";; print par2log';
+print "lambdat coef   : ";; print parlambda';
+
+print; print "Posterior class probabilities (TECH=1, TECH=2): "; 
+format /rds 6,2;
+prob2g=pr2halhet(parpro2,data);
+g1=prob2g[.,3].>=prob2g[.,4]; g2=prob2g[.,3].<prob2g[.,4];
+
+@ ---------------------------------------------- @
+@ -- logged relative prior probability (lnRP) -- @
+@ ---------------------------------------------- @
+lnrpprior=ln(prob2g[.,1]./(100-prob2g[.,1])); 
+
+print; print "total average: "; print meanc(prob2g[.,3])~meanc(prob2g[.,4]);
+print "number: "; print sumc(g1)~sumc(g2);
+print "partial average: "; print meanc(selif(prob2g[.,3],g1));; print meanc(selif(prob2g[.,4],g2));
+print "partial maximum: "; print maxc(selif(prob2g[.,3],g1));; print maxc(selif(prob2g[.,4],g2));
+print "partial minimum: "; print minc(selif(prob2g[.,3],g1));; print minc(selif(prob2g[.,4],g2));
+print "partial standard deviation: "; print stdc(selif(prob2g[.,3],g1));; print stdc(selif(prob2g[.,4],g2));
+
+print; print "Posterior probabilities (class 1): "; print;
+call efianual(selif(prob2g[.,3],g1),selif(t,g1)); call efianual(selif(prob2g[.,3],g1),ones(rows(selif(t,g1)),1));
+print; print "Posterior probabilities (class 2): "; print;
+call efianual(selif(prob2g[.,4],g2),selif(t,g2)); call efianual(selif(prob2g[.,4],g2),ones(rows(selif(t,g2)),1));
+print;
+
+
+@ ---------------------------- @
+@ -- OLS regression of lnRP -- @
+@ ---------------------------- @
+
+print; print "------------- OLS regression of lnRP ------------ ";
+yreg=delif(lnrpprior-lag(lnrpprior,1),t.==1);
+xreg=delif(unos~lag(lpievac,1)~lag(lvacsau,1),t.==1);
+{bols,tstud,rtstud,sigmaols,r2corr,obs,varcov,rvarcov,e,dof} = olsp(yreg,xreg); 
+
+tasapievac=delif(lpievac-lag(lpievac,1),t.==1);
+tasavacsau=delif(lvacsau-lag(lvacsau,1),t.==1);
+print; print "tasapievac  tasavacsau: ";; print meanc(tasapievac)~meanc(tasavacsau); 
+
+@ --------------------------------------------------- @
+@ -- matrices to be extended with other LCM models -- @
+@ --------------------------------------------------- @
+prob2gvec=prob2gvec~prob2g;
+lnrpvec=lnrpvec~lnrpprior;
+lambdavec=lambdavec~lambda;
+
+@ ----------------------- @
+@ -- Efficiency Scores -- @
+@ ----------------------- @
+
+@ ---Efficiency scores: Half-normal (see almanidis et al.) - two groups --- @
+parmlet=parpro2[1:rows(parpro2)-cols(q)];
+parmlet1=parmlet[1:rows(parmlet)/2];
+parmlet2=parmlet[rows(parmlet)/2+1:rows(parmlet)];
+print; print "Efficiency scores: Halfnormal HETEROSCEDASTICO - GROUP 1";
+b=parmlet1[1:rows(parmlet1)-1-nz]; sigmav=exp(parmlet1[rows(parmlet1)-nz]); bz=parmlet1[rows(parmlet1)-nz+1:rows(parmlet1)];
+sigmau=exp(z*bz);
+e=y-x*b;
+e=e;   @ insert  minus sign if cost funtion  @
+sigma=(sigmau^2+sigmav^2)^0.5; mua=(-e.*sigmau^2)./sigma^2; sigmaa=sigmau*sigmav./sigma;     @ e=v-u @
+uhat=mua+sigmaa.*(pdfn(-mua./sigmaa))./(1-cdfn(-mua./sigmaa));
+ef=exp(-uhat); 
+call efianual(selif(ef,g1),selif(t,g1)); call efianual(selif(ef,g1),ones(rows(selif(t,g1)),1));
+
+print; print "Efficiency scores: Halfnormal HETEROSCEDASTICO - GROUP 2";
+b=parmlet2[1:rows(parmlet2)-1-nz]; sigmav=exp(parmlet2[rows(parmlet2)-nz]); bz=parmlet2[rows(parmlet2)-nz+1:rows(parmlet2)];
+sigmau=exp(z*bz);
+e=y-x*b;
+e=e;   @ insert  minus sign if cost funtion  @
+sigma=(sigmau^2+sigmav^2)^0.5; mua=(-e.*sigmau^2)./sigma^2; sigmaa=sigmau*sigmav./sigma;     @ e=v-u @
+uhat=mua+sigmaa.*(pdfn(-mua./sigmaa))./(1-cdfn(-mua./sigmaa));
+ef=exp(-uhat); 
+call efianual(selif(ef,g2),selif(t,g2)); call efianual(selif(ef,g2),ones(rows(selif(t,g2)),1));
+
+print; 
+print "------------------------------------------------------------------- ";
+print "-------------- Table 3. Parameter estimates. DL-LCM  -------------- ";
+print "--------- (ENDOGENOUS lambda autoregressive coefficient) ---------- ";
+print "------------------------------------------------------------------- ";
+print; 
+print "------------------------------------------------------------------- ";
+print "---------------- (Homogeneous coefficient model) ------------------ ";
+print "------------------------------------------------------------------- ";
+
+wait;
+
+@ ------------- Original q variables ----------- @
+q=qini;
+
+@ ----------- Determinants of lambda ----------- @
+l=unos;
+let namel= lambda0;
+
+@ --- initial parameters --- @
+parini2=parmle1|parmle2|par2log|ones(cols(l),1)*0|parlambda;
+parini2=parpro2[1:rows(parpro2)-1]|ones(cols(l),1)*-0.1|parpro2[rows(parpro2)];
+mvname2=mvname1|mvname1|nameq|namel|namelam;
+
+@ --- homogeneous model - 3 years --- @
+let parini2=
+12.737586593402
+0.142758513430
+0.751194989988
+0.088208453233
+0.060172187723
+0.043740765727
+0.301743375960
+0.366676727862
+0.022630218051
+0.003484880477
+0.024244560394
+-0.233164677553
+0.009703560584
+-0.001052926772
+-0.027024995759
+-0.106799218169
+-0.078381117824
+0.043570445764
+0.067532253241
+-0.036243604794
+-0.008707132076
+0.013981895998
+-0.035965467454
+-0.096892910592
+-0.081810562332
+-0.043835305592
+-0.068593151718
+-0.067942250088
+-0.081378659073
+-0.041288898272
+-2.707611980552
+-2.311743572012
+0.366729159906
+0.687060325775
+12.688403023296
+0.393536015705
+0.364859045311
+0.104333156173
+0.119160492741
+0.042425386066
+0.117000768434
+0.448049085126
+0.131209818947
+-0.011687946042
+-0.020491535320
+-0.434880758003
+-0.002805327565
+0.130029873740
+-0.070699780313
+-0.005348002848
+0.097115300677
+0.205341603815
+-0.116343160556
+0.000125955578
+-0.041980490685
+0.018850415852
+-0.058023862069
+-0.136786011600
+-0.083725735920
+-0.093770995942
+-0.140578634868
+-0.144929709919
+-0.169808200359
+-0.132129801296
+-2.136065598081
+-2.226479858694
+-1.154297850908
+0.556400654678
+-0.133318521869
+6.453411606996
+-0.234692171064
+0.088809567731
+-3.127384641601
+;
+
+@ Checking parameters @
+par=parini2;
+parmlet=par[1:rows(par)-cols(l)-cols(q)-1];
+parmle1=parmlet[1:rows(parmlet)/2]; 
+parmle2=parmlet[rows(parmlet)/2+1:rows(parmlet)];
+par2log=par[rows(par)-cols(l)-cols(q):rows(par)-cols(l)-1];
+parl=par[rows(par)-cols(l):rows(par)-1];
+parlambda=par[rows(par)];                    
+print; print "initial values";
+print "Coeficients of Lambda: ";; print parl';
+lambda=exp(l*parl)./(exp(l*parl)+1);
+call efianual(lambda,t); call efianual(lambda,ones(rows(t),1)); 
+print;
+print "Meanc(lambda)= ";; print meanc(lambda);; 
+print; 
+print "SFA GROUP 1:      ";; print parmle1';
+print "SFA GROUP 2:      ";; print parmle2';
+print "Logit variables:  ";; print par2log';
+print "Lambda variables: ";; print parl';
+print "Lambdat coef   : ";; print parlambda;
+
+@ --------------------------------------------- @
+@ -- maximization of the likelihood function -- @
+@ --------------------------------------------- @
+
+__title="Table 3. DL-LCM. Homogeneous coefficient model";
+_max_CovPar=2; _max_Algorithm=2;  _max_ParNames=mvname2; _max_GradTol=0.0001;
+{ parpro2,f,g,cov,retcode }=maxlik(data,0,&endoglcm,parini2); 
+call maxprt(parpro2,f,g,cov,retcode);
+
+format /rds 15,12;
+print; print "Table 3. DL-LCM. Homogeneous coefficient model"; print parpro2;
+
+par=parpro2;
+parmlet=par[1:rows(par)-cols(l)-cols(q)-1];
+parmle1=parmlet[1:rows(parmlet)/2]; 
+parmle2=parmlet[rows(parmlet)/2+1:rows(parmlet)];
+par2log=par[rows(par)-cols(l)-cols(q):rows(par)-cols(l)-1];
+parl=par[rows(par)-cols(l):rows(par)-1];
+parlambda=par[rows(par)];                    
+
+print;
+print "Coeficients of Lambda: ";; print parl';
+lambda=exp(l*parl)./(exp(l*parl)+1);
+
+print "Statistics of Lambda: ";; 
+call efianual(lambda,t); call efianual(lambda,ones(rows(t),1)); print; 
+print;
+print "Meanc(lambda)= ";; print meanc(lambda);; 
+print; 
+print "SFA GROUP 1:      ";; print parmle1';
+print "SFA GROUP 2:      ";; print parmle2';
+print "Logit variables:  ";; print par2log';
+print "Lambda variables: ";; print parl';
+print "Lambdat coef   : ";; print parlambda;
+
+@ ----- Likehood function: LCM -half-normal HETEROSCEDASTIC model  - Endogenous Lambda INSIDE  ---- @
+proc endoglcm(par,data);
+local parmlet,par2log,parmle1,parmle2,prob1,prob2,lf,f,m,lam,lamt,parl,parlambda;
+
+parmlet=par[1:rows(par)-cols(l)-cols(q)-1];
+parmle1=parmlet[1:rows(parmlet)/2]; 
+parmle2=parmlet[rows(parmlet)/2+1:rows(parmlet)];
+par2log=par[rows(par)-cols(l)-cols(q):rows(par)-cols(l)-1];
+parl=par[rows(par)-cols(l):rows(par)-1];
+parlambda=par[rows(par)];    
+lam=exp(l*parl)./(exp(l*parl)+1);       @ computation of lambda @
+lamt=lam.^t;                            @ computation of lambda^t @
+lamt=lam.^tr;                           @ for unbalanced panel datasets = CHECK!! @
+m=dislag2(q,cod,t,lam)~lamt;            @ ojo: ahora dislag2 no debe incluir (1-lambda) @
+m=(1-lam).*m;                           @ tanto m como lambdat se multiplican por (1-lambda) @
+par2log=par2log|parlambda;              @ concatenating probability parameters @
+prob1=exp(m*par2log)./(exp(m*par2log)+1);
+prob2=1-prob1;
+f=exp(halfalthet(parmle1,data)).*prob1+exp(halfalthet(parmle2,data)).*prob2;
+lf=ln(f);
+retp(lf);
+endp;
+
+@ ----- posterior class probabilities - Endogenous Lambda INSIDE ---- @
+proc prendoglcm(par,data);
+local parmlet,parmle1,parmle2,par2log,prob1,prob2,f,f1,f2,post1,post2,m,lam,lamt,parl,parlambda;
+parmlet=par[1:rows(par)-cols(l)-cols(q)-1];
+parmle1=parmlet[1:rows(parmlet)/2]; 
+parmle2=parmlet[rows(parmlet)/2+1:rows(parmlet)];
+par2log=par[rows(par)-cols(l)-cols(q):rows(par)-cols(l)-1];
+parl=par[rows(par)-cols(l):rows(par)-1];
+parlambda=par[rows(par)];                    
+lam=exp(l*parl)./(exp(l*parl)+1);       @ computation of lambda @
+lamt=lam.^t;                            @ computation of lambda^t = prueba @
+lamt=lam.^tr;                           @ for unbalanced panel datasets = CHECK!! @
+m=dislag2(q,cod,t,lam)~lamt;            @ ojo: ahora dislag2 no debe incluir (1-lambda) @
+m=(1-lam).*m;                           @ tanto m como lambdat se multiplican por (1-lambda) @
+par2log=par2log|parlambda;              @ concatenating probability parameters @
+prob1=exp(m*par2log)./(exp(m*par2log)+1);
+prob2=1-prob1;
+f1=exp(halfalthet(parmle1,data)).*prob1; 
+f2=exp(halfalthet(parmle2,data)).*prob2;
+f=f1+f2; post1=f1./f; post2=f2./f;
+retp(100*(prob1~prob2~post1~post2~exp(halfalthet(parmle1,data))~exp(halfalthet(parmle2,data))));
+endp;
+
+print; print "Posterior class probabilities - Endogenous Lambda INSIDE (TECH=1, TECH=2): "; 
+format /rds 6,2;
+prob2g=prendoglcm(parpro2,data);
+g1=prob2g[.,3].>=prob2g[.,4]; g2=prob2g[.,3].<prob2g[.,4];
+
+@ ---- lnRP ---- @
+lnrpprior=ln(prob2g[.,1]./(100-prob2g[.,1])); 
+
+print; print "total average: "; print meanc(prob2g[.,3])~meanc(prob2g[.,4]);
+print "number: "; print sumc(g1)~sumc(g2);
+print "partial average: "; print meanc(selif(prob2g[.,3],g1));; print meanc(selif(prob2g[.,4],g2));
+print "partial maximum: "; print maxc(selif(prob2g[.,3],g1));; print maxc(selif(prob2g[.,4],g2));
+print "partial minimum: "; print minc(selif(prob2g[.,3],g1));; print minc(selif(prob2g[.,4],g2));
+print "partial standard deviation: "; print stdc(selif(prob2g[.,3],g1));; print stdc(selif(prob2g[.,4],g2));
+
+print; print "Posterior probabilities (class 1): "; print;
+call efianual(selif(prob2g[.,3],g1),selif(t,g1)); call efianual(selif(prob2g[.,3],g1),ones(rows(selif(t,g1)),1));
+print; print "Posterior probabilities (class 2): "; print;
+call efianual(selif(prob2g[.,4],g2),selif(t,g2)); call efianual(selif(prob2g[.,4],g2),ones(rows(selif(t,g2)),1));
+
+
+@ --------------------------------------------------- @
+@ -- matrices to be extended with other LCM models -- @
+@ --------------------------------------------------- @
+prob2gvec=prob2gvec~prob2g;
+lnrpvec=lnrpvec~lnrpprior;
+lambdavec=lambdavec~lambda;
+
+print; 
+print " -------------------------------- ";
+print " -- Table 4. Efficiency scores -- ";
+print " -------------------------------- ";
+
+@ ---Efficiency scores: Half-normal (see almanidis et al.) - two groups --- @
+par=parpro2;
+parmlet=par[1:rows(par)-cols(q)-cols(l)-1];
+parmle1=parmlet[1:rows(parmlet)/2]; 
+parmle2=parmlet[rows(parmlet)/2+1:rows(parmlet)];
+
+print; print "Efficiency scores: Intensive farms";
+b=parmlet1[1:rows(parmlet1)-1-nz]; sigmav=exp(parmlet1[rows(parmlet1)-nz]); bz=parmlet1[rows(parmlet1)-nz+1:rows(parmlet1)];
+sigmau=exp(z*bz);
+e=y-x*b;
+e=e;   @ insert  minus sign if cost funtion  @
+sigma=(sigmau^2+sigmav^2)^0.5; mua=(-e.*sigmau^2)./sigma^2; sigmaa=sigmau*sigmav./sigma;     @ e=v-u @
+uhat=mua+sigmaa.*(pdfn(-mua./sigmaa))./(1-cdfn(-mua./sigmaa));
+ef=exp(-uhat); 
+call efianual(selif(ef,g1),selif(t,g1)); call efianual(selif(ef,g1),ones(rows(selif(t,g1)),1));
+@format /rds 7,3;  print; print cod~uhat~ef;@
+
+print; print "Efficiency scores: Extensive farms";
+b=parmlet2[1:rows(parmlet2)-1-nz]; sigmav=exp(parmlet2[rows(parmlet2)-nz]); bz=parmlet2[rows(parmlet2)-nz+1:rows(parmlet2)];
+sigmau=exp(z*bz);
+e=y-x*b;
+e=e;   @ insert  minus sign if cost funtion  @
+sigma=(sigmau^2+sigmav^2)^0.5; mua=(-e.*sigmau^2)./sigma^2; sigmaa=sigmau*sigmav./sigma;     @ e=v-u @
+uhat=mua+sigmaa.*(pdfn(-mua./sigmaa))./(1-cdfn(-mua./sigmaa));
+ef=exp(-uhat); 
+call efianual(selif(ef,g2),selif(t,g2)); call efianual(selif(ef,g2),ones(rows(selif(t,g2)),1));
+@format /rds 7,3;  print; print cod~uhat~ef;@
+
+print; 
+print "------------------------------------------------------------------- ";
+print "-------------- Table 3. Parameter estimates. DL-LCM  -------------- ";
+print "--------- (ENDOGENOUS lambda autoregressive coefficient) ---------- ";
+print "------------------------------------------------------------------- ";
+print; 
+print "------------------------------------------------------------------- ";
+print "-------------- (Heterogeneous coefficient model) ------------------ ";
+print "------------------------------------------------------------------- ";
+
+wait;
+
+@ ------------- Original q variables ----------- @
+q=qini;
+
+@ ----------- Determinants of lambda ----------- @
+
+@ note: introduced at the begining of the script file @
+
+l=lini;
+namel=namelini;
+
+@ --- initial parameters --- @
+parini2=parmle1|parmle2|par2log|ones(cols(l),1)*0|parlambda;
+parini2=parpro2[1:rows(parpro2)-1]|ones(cols(l),1)*-0.1|parpro2[rows(parpro2)];
+mvname2=mvname1|mvname1|nameq|namel|namelam;
+
+@ --- heterogeneous model - 3 years --- @
+let parini2=
+12.742752381494
+0.124421903843
+0.779735705021
+0.095235499398
+0.050415088708
+0.045096851255
+0.320149377210
+0.456792092535
+0.023165337612
+-0.001387306686
+0.024144738893
+-0.279650864920
+-0.012474951307
+0.032879559828
+-0.024402049266
+-0.092173995670
+-0.116501233136
+0.045802157351
+0.073944847394
+-0.036773152964
+-0.014400438921
+0.012765389617
+-0.036897278024
+-0.100394969641
+-0.079920735642
+-0.045137380836
+-0.071296381784
+-0.069380979185
+-0.081201049417
+-0.044010808484
+-2.723750886987
+-2.299895330744
+0.354855170081
+0.705827773855
+12.690530322238
+0.394603872067
+0.362315553777
+0.101612041205
+0.121818189904
+0.043141716417
+0.118851782259
+0.431644602183
+0.131691750535
+-0.004936926409
+-0.017207077615
+-0.426192122888
+-0.006456940703
+0.126102144400
+-0.074501045569
+-0.002652918713
+0.093413528945
+0.201976959604
+-0.116048730034
+0.000077437543
+-0.036678785137
+0.019473864153
+-0.055798674200
+-0.131373187642
+-0.085509169194
+-0.089623954870
+-0.137191279041
+-0.142252420615
+-0.168115624193
+-0.128382666917
+-2.158397909260
+-2.185959304950
+-0.967184349874
+0.542516533584
+-0.244550061950
+7.378496843185
+-0.126449094898
+0.404588412760
+-0.833925535457
+-3.631521583064
+;
+
+@ Checking parameters @
+par=parini2;
+parmlet=par[1:rows(par)-cols(l)-cols(q)-1];
+parmle1=parmlet[1:rows(parmlet)/2]; 
+parmle2=parmlet[rows(parmlet)/2+1:rows(parmlet)];
+par2log=par[rows(par)-cols(l)-cols(q):rows(par)-cols(l)-1];
+parl=par[rows(par)-cols(l):rows(par)-1];
+parlambda=par[rows(par)];                    
+print; print "initial values";
+print "Coeficients of Lambda: ";; print parl';
+lambda=exp(l*parl)./(exp(l*parl)+1);
+call efianual(lambda,t); call efianual(lambda,ones(rows(t),1)); 
+print;
+print "Meanc(lambda)= ";; print meanc(lambda);; 
+print; 
+print "SFA GROUP 1:      ";; print parmle1';
+print "SFA GROUP 2:      ";; print parmle2';
+print "Logit variables:  ";; print par2log';
+print "Lambda variables: ";; print parl';
+print "Lambdat coef   : ";; print parlambda;
+
+
+@ --------------------------------------------- @
+@ -- maximization of the likelihood function -- @
+@ --------------------------------------------- @
+
+__title="Table 3. DL-LCM - Heterogeneous coefficient model";
+_max_CovPar=2; _max_Algorithm=2;  _max_ParNames=mvname2; _max_GradTol=0.0001;
+{ parpro2,f,g,cov,retcode }=maxlik(data,0,&endoglcm,parini2); 
+call maxprt(parpro2,f,g,cov,retcode);
+
+format /rds 15,12;
+print; print "Table 3. DL-LCM - Heterogeneous coefficient model"; print parpro2;
+
+par=parpro2;
+parmlet=par[1:rows(par)-cols(l)-cols(q)-1];
+parmle1=parmlet[1:rows(parmlet)/2]; 
+parmle2=parmlet[rows(parmlet)/2+1:rows(parmlet)];
+par2log=par[rows(par)-cols(l)-cols(q):rows(par)-cols(l)-1];
+parl=par[rows(par)-cols(l):rows(par)-1];
+parlambda=par[rows(par)];                    
+
+print;
+print "Coeficients of Lambda: ";; print parl';
+lambda=exp(l*parl)./(exp(l*parl)+1);
+
+print "Statistics of Lambda: ";; 
+call efianual(lambda,t); call efianual(lambda,ones(rows(t),1)); print; 
+print;
+print "Meanc(lambda)= ";; print meanc(lambda);; 
+print; 
+print "SFA GROUP 1:      ";; print parmle1';
+print "SFA GROUP 2:      ";; print parmle2';
+print "Logit variables:  ";; print par2log';
+print "Lambda variables: ";; print parl';
+print "Lambdat coef   : ";; print parlambda;
+
+@ ----- Likehood function: LCM -half-normal HETEROSCEDASTIC model  - Endogenous Lambda INSIDE  ---- @
+proc endoglcm(par,data);
+local parmlet,par2log,parmle1,parmle2,prob1,prob2,lf,f,m,lam,lamt,parl,parlambda;
+
+parmlet=par[1:rows(par)-cols(l)-cols(q)-1];
+parmle1=parmlet[1:rows(parmlet)/2]; 
+parmle2=parmlet[rows(parmlet)/2+1:rows(parmlet)];
+par2log=par[rows(par)-cols(l)-cols(q):rows(par)-cols(l)-1];
+parl=par[rows(par)-cols(l):rows(par)-1];
+parlambda=par[rows(par)];    
+lam=exp(l*parl)./(exp(l*parl)+1);       @ computation of lambda @
+lamt=lam.^t;                            @ computation of lambda^t @
+lamt=lam.^tr;                           @ for unbalanced panel datasets = CHECK!! @
+m=dislag2(q,cod,t,lam)~lamt;            @ ojo: ahora dislag2 no debe incluir (1-lambda) @
+m=(1-lam).*m;                           @ tanto m como lambdat se multiplican por (1-lambda) @
+par2log=par2log|parlambda;              @ concatenating probability parameters @
+prob1=exp(m*par2log)./(exp(m*par2log)+1);
+prob2=1-prob1;
+f=exp(halfalthet(parmle1,data)).*prob1+exp(halfalthet(parmle2,data)).*prob2;
+lf=ln(f);
+retp(lf);
+endp;
+
+@ ----- posterior class probabilities - Endogenous Lambda INSIDE ---- @
+proc prendoglcm(par,data);
+local parmlet,parmle1,parmle2,par2log,prob1,prob2,f,f1,f2,post1,post2,m,lam,lamt,parl,parlambda;
+parmlet=par[1:rows(par)-cols(l)-cols(q)-1];
+parmle1=parmlet[1:rows(parmlet)/2]; 
+parmle2=parmlet[rows(parmlet)/2+1:rows(parmlet)];
+par2log=par[rows(par)-cols(l)-cols(q):rows(par)-cols(l)-1];
+parl=par[rows(par)-cols(l):rows(par)-1];
+parlambda=par[rows(par)];                    
+lam=exp(l*parl)./(exp(l*parl)+1);       @ computation of lambda @
+lamt=lam.^t;                            @ computation of lambda^t = prueba @
+lamt=lam.^tr;                           @ for unbalanced panel datasets = CHECK!! @
+m=dislag2(q,cod,t,lam)~lamt;            @ ojo: ahora dislag2 no debe incluir (1-lambda) @
+m=(1-lam).*m;                           @ tanto m como lambdat se multiplican por (1-lambda) @
+par2log=par2log|parlambda;              @ concatenating probability parameters @
+prob1=exp(m*par2log)./(exp(m*par2log)+1);
+prob2=1-prob1;
+f1=exp(halfalthet(parmle1,data)).*prob1; 
+f2=exp(halfalthet(parmle2,data)).*prob2;
+f=f1+f2; post1=f1./f; post2=f2./f;
+retp(100*(prob1~prob2~post1~post2~exp(halfalthet(parmle1,data))~exp(halfalthet(parmle2,data))));
+endp;
+
+print; print "Posterior class probabilities - Endogenous Lambda INSIDE (TECH=1, TECH=2): "; 
+format /rds 6,2;
+prob2g=prendoglcm(parpro2,data);
+g1=prob2g[.,3].>=prob2g[.,4]; g2=prob2g[.,3].<prob2g[.,4];
+
+@ ---- lnRP ---- @
+lnrpprior=ln(prob2g[.,1]./(100-prob2g[.,1])); 
+
+print; print "total average: "; print meanc(prob2g[.,3])~meanc(prob2g[.,4]);
+print "number: "; print sumc(g1)~sumc(g2);
+print "partial average: "; print meanc(selif(prob2g[.,3],g1));; print meanc(selif(prob2g[.,4],g2));
+print "partial maximum: "; print maxc(selif(prob2g[.,3],g1));; print maxc(selif(prob2g[.,4],g2));
+print "partial minimum: "; print minc(selif(prob2g[.,3],g1));; print minc(selif(prob2g[.,4],g2));
+print "partial standard deviation: "; print stdc(selif(prob2g[.,3],g1));; print stdc(selif(prob2g[.,4],g2));
+
+print; print "Posterior probabilities (class 1): "; print;
+call efianual(selif(prob2g[.,3],g1),selif(t,g1)); call efianual(selif(prob2g[.,3],g1),ones(rows(selif(t,g1)),1));
+print; print "Posterior probabilities (class 2): "; print;
+call efianual(selif(prob2g[.,4],g2),selif(t,g2)); call efianual(selif(prob2g[.,4],g2),ones(rows(selif(t,g2)),1));
+
+
+@ --------------------------------------------------- @
+@ -- matrices to be extended with other LCM models -- @
+@ --------------------------------------------------- @
+prob2gvec=prob2gvec~prob2g;
+lnrpvec=lnrpvec~lnrpprior;
+lambdavec=lambdavec~lambda;
+
+print; 
+print " -------------------------------- ";
+print " -- Table 4. Efficiency scores -- ";
+print " -------------------------------- ";
+
+@ ---Efficiency scores: Half-normal (see almanidis et al.) - two groups --- @
+par=parpro2;
+parmlet=par[1:rows(par)-cols(q)-cols(l)-1];
+parmle1=parmlet[1:rows(parmlet)/2]; 
+parmle2=parmlet[rows(parmlet)/2+1:rows(parmlet)];
+
+print; print "Efficiency scores: Intensive farms";
+b=parmlet1[1:rows(parmlet1)-1-nz]; sigmav=exp(parmlet1[rows(parmlet1)-nz]); bz=parmlet1[rows(parmlet1)-nz+1:rows(parmlet1)];
+sigmau=exp(z*bz);
+e=y-x*b;
+e=e;   @ insert  minus sign if cost funtion  @
+sigma=(sigmau^2+sigmav^2)^0.5; mua=(-e.*sigmau^2)./sigma^2; sigmaa=sigmau*sigmav./sigma;     @ e=v-u @
+uhat=mua+sigmaa.*(pdfn(-mua./sigmaa))./(1-cdfn(-mua./sigmaa));
+ef=exp(-uhat); 
+call efianual(selif(ef,g1),selif(t,g1)); call efianual(selif(ef,g1),ones(rows(selif(t,g1)),1));
+@format /rds 7,3;  print; print cod~uhat~ef;@
+ef1=ef;
+
+print; print "Efficiency scores: Extensive farms";
+b=parmlet2[1:rows(parmlet2)-1-nz]; sigmav=exp(parmlet2[rows(parmlet2)-nz]); bz=parmlet2[rows(parmlet2)-nz+1:rows(parmlet2)];
+sigmau=exp(z*bz);
+e=y-x*b;
+e=e;   @ insert  minus sign if cost funtion  @
+sigma=(sigmau^2+sigmav^2)^0.5; mua=(-e.*sigmau^2)./sigma^2; sigmaa=sigmau*sigmav./sigma;     @ e=v-u @
+uhat=mua+sigmaa.*(pdfn(-mua./sigmaa))./(1-cdfn(-mua./sigmaa));
+ef=exp(-uhat); 
+call efianual(selif(ef,g2),selif(t,g2)); call efianual(selif(ef,g2),ones(rows(selif(t,g2)),1));
+@format /rds 7,3;  print; print cod~uhat~ef;@
+ef2=ef;
+
+print; 
+print " ----------------------------------------------------------------- ";
+print " -- Table 5: Farm predicted output under different technologies -- ";
+print " ----------------------------------------------------------------- ";
+
+wait;
+
+@ estimated parameters @
+par=parpro2;
+parmlet=par[1:rows(par)-cols(q)-cols(l)-1];
+parmle1=parmlet[1:rows(parmlet)/2]; 
+parmle2=parmlet[rows(parmlet)/2+1:rows(parmlet)];
+@ predicted output - class 1 @
+b=parmle1[1:rows(parmle1)-1-nz];
+y1=x*b;
+e1=y-y1;
+@ predicted output - class 2 @
+b=parmle2[1:rows(parmle2)-1-nz]; 
+y2=x*b;
+e2=y-y2;
+@ ratio @
+ratio=exp(y1)./exp(y2);
+
+print;
+print; print "Predicted output using class 1 parameters: ";
+call efianual(exp(y1),t);
+call efianual(exp(y1),ones(rows(t),1));
+print; print "Predicted output using class 2 parameters: ";
+call efianual(exp(y2),t);
+call efianual(exp(y2),ones(rows(t),1));
+
+print; 
+print " ----------------------------------------------------------------- ";
+print " ------ Table 6: Distribution of the predicted output ratios ----- ";
+print " ----------------------------------------------------------------- ";
+
+wait;
+
+format /rds 3,0;
+@ distribution of the ration @
+print; 
+print "ratio.<=0.8                  ";; print rows(selif(y,ratio.<=0.8));
+print "ratio.>0.8 .and ratio.<=0.9  ";; print rows(selif(y,ratio.>0.8 .and ratio.<=0.9));
+print "ratio.>0.9 .and ratio.<=1    ";; print rows(selif(y,ratio.>0.9 .and ratio.<=1));
+print "ratio.>1 .and ratio.<=1.1    ";; print rows(selif(y,ratio.>1 .and ratio.<=1.1));
+print "ratio.>1.1 .and ratio.<=1.2  ";; print rows(selif(y,ratio.>1.1 .and ratio.<=1.2));
+print "ratio.>1.2 .and ratio.<=1.3  ";; print rows(selif(y,ratio.>1.2 .and ratio.<=1.3));
+print "ratio.>1.3 .and ratio.<=1.4  ";; print rows(selif(y,ratio.>1.3 .and ratio.<=1.4));
+print "ratio.>1.4 .and ratio.<=1.5  ";; print rows(selif(y,ratio.>1.4 .and ratio.<=1.5));
+print ",ratio.>1.5 .and ratio.<=1.6 ";; print rows(selif(y,ratio.>1.5 .and ratio.<=1.6));
+print "ratio.>1.6 .and ratio.<=1.7  ";; print rows(selif(y,ratio.>1.6 .and ratio.<=1.7));
+print "ratio.>1.7                   ";; print rows(selif(y,ratio.>1.7));
+
+
+print;
+print "------------------------------------------------------------ ";
+print "------------------------------------------------------------ ";
+print "------- END OF THE RESULTS PRESENTED IN THE PAPER  --------- ";
+print "------------------------------------------------------------ ";
+print "------------------------------------------------------------ ";
+
+end;
+
+
+@ ------------------------------------------------ @
+@ ------------------------------------------------ @
+@ -- TASK 6: ESTIMATION OF FRONTIER MODELS (II) -- @
+@ ------------------------------------------------ @
+@ ------------------------------------------------ @
+
+@ ------------------------------------------------------------- @
+@ -- Simplifed codes for the 2-class frontier DL-LCM model ---- @
+@ ------------------------------------------------------------- @
+
+wait;
+
+print; 
+print "--------------------------------------------------------------------- ";
+print "--------- 2-class LCM with persistence in regime changes  ----------- ";
+print "--------------------(ENDOGENOUS Lambda INSIDE) ---------------------- ";
+print "--------------------------------------------------------------------- ";
+print; 
+print "--------------------------------------------------------------------- ";
+print "--------------------    (Heterogeneous model)  ---------------------- ";
+print "--------------------------------------------------------------------- ";
+
+@ New variables used to simplify the previous codes and facilitate the movement to a 3-class model @
+print; print "Determinants of lambda: ";
+nl=cols(l);
+print; print "cols(l): ";; print nl;
+print; print "Determinants of prior probabilities with persistence: ";
+nm=cols(q)+1;
+print; print "cols(m): ";; print nm; 
+np=rows(parmle1);     
+print; print "Determinants of each production function: ";
+print; print "rows(parmle1): ";; print np; 
+
+@ ------------- Original q variables ----------- @
+q=qini;
+
+@ --- initial parameters --- @
+parini2=(parmle1|parmle2)|(par2log|parlambda|parl);
+mvname2=(mvname1|mvname1)|(nameq|namelam|namel);
+
+@ --- Checking the decomposition of the whole set of parameters --- @
+parnp1=parini2[1:np];
+parnp2=parini2[np+1:2*np];
+parnm1=parini2[2*np+1:2*np+nm];
+parnl1=parini2[2*np+nm+1:2*np+nm+nl];
+
+print; print "Checking the decomposition of the whole set of parameters: ";
+print; 
+print "SFA GROUP 1:      ";; print parnp1';
+print "SFA GROUP 2:      ";; print parnp2';
+print "Logit variables  1: ";; print parnm1';
+print "Lambda variables 1: ";; print parnl1';
+
+wait;
+
+@ ----- Likehood function: 3-class DC-LCM model - Endogenous Lambda INSIDE  ---- @
+proc endoglcm2(par,data);
+local parnp1,parnp2,parnp3,parnm1,parnl1,parnm2,parnl2;
+local lam1,lam2,lamt1,lamt2,m1,m2,prob1,prob2,prob3,lf,f;
+parnp1=par[1:np];
+parnp2=par[np+1:2*np];
+parnm1=par[2*np+1:2*np+nm];
+parnl1=par[2*np+nm+1:2*np+nm+nl];
+lam1=exp(l*parnl1)./(exp(l*parnl1)+1);      @ computation of lambda_1 @
+lamt1=lam1.^tr;                             @ lambda_1^tr trend @
+m1=dislag2(q,cod,t,lam1)~lamt1;              @ computation of m for class 1 @
+m1=(1-lam1).*m1;                           
+prob1=exp(m1*parnm1)./(exp(m1*parnm1)+1);   @ computation of priors for class 1 @
+prob2=1-prob1;
+f=exp(halfalthet(parnp1,data)).*prob1+exp(halfalthet(parnp2,data)).*prob2;
+lf=ln(f);
+retp(lf);
+endp;
+
+@ ----- posterior class probabilities - Endogenous Lambda INSIDE ---- @
+proc prendoglcm2(par,data);
+local parnp1,parnp2,parnp3,parnm1,parnl1,parnm2,parnl2;
+local lam1,lam2,lamt1,lamt2,m1,m2,prob1,prob2,prob3,lf,f;
+local post1,post2,post3,f1,f2,f3;
+parnp1=par[1:np];
+parnp2=par[np+1:2*np];
+parnm1=par[2*np+1:2*np+nm];
+parnl1=par[2*np+nm+1:2*np+nm+nl];
+lam1=exp(l*parnl1)./(exp(l*parnl1)+1);      @ computation of lambda_1 @
+lamt1=lam1.^tr;                             @ lambda_1^tr trend @
+m1=dislag2(q,cod,t,lam1)~lamt1;              @ computation of m for class 1 @
+m1=(1-lam1).*m1;                           
+prob1=exp(m1*parnm1)./(exp(m1*parnm1)+1);   @ computation of priors for class 1 @
+prob2=1-prob1;
+f1=exp(halfalthet(parnp1,data)).*prob1; 
+f2=exp(halfalthet(parnp2,data)).*prob2;
+f=f1+f2; post1=f1./f; post2=f2./f; 
+retp(100*(prob1~prob2~post1~post2~exp(halfalthet(parnp1,data))~exp(halfalthet(parnp2,data))));
+endp;
+
+@ --------------------------------------------------------- @
+@ -- maximization of the likelihood function - 3 classes -- @
+@ --------------------------------------------------------- @
+
+__title="LCM -ENDOGENOUS Lambda INSIDE - 3 classes ";
+_max_CovPar=2; _max_Algorithm=3;  _max_ParNames=mvname2; _max_GradTol=0.0001;
+{ parpro2,f,g,cov,retcode }=maxlik(data,0,&endoglcm2,parini2); 
+call maxprt(parpro2,f,g,cov,retcode);
+
+format /rds 15,12;
+print; print "LCM -ENDOGENOUS Lambda INSIDE - 2 classes"; print parpro2;
+
+print; 
+print "--------------------------------------------------------------------- ";
+print "--------------------------------------------------------------------- ";
+print "-- 3-class frontier LC-LCM with endogenous and heterogeneous lambda - ";
+print "--------------------------------------------------------------------- ";
+print "--------------------------------------------------------------------- ";
+
+@ note: this model is not included in the paper as in our application there are @
+@       two technologies and this model did not work                            @
+
+wait;
+
+@ ------------- Original q variables ----------- @
+q=qini;
+
+@ --- initial parameters --- @
+parini3=(parmle2|parmle2|parmle1)|(par2log|parlambda|parl)|(par2log|parlambda|parl);
+mvname3=(mvname1|mvname1|mvname1)|(nameq|namelam|namel)|(nameq|namelam|namel);
+
+@ --- Checking the decomposition of the whole set of parameters --- @
+parnp1=parini3[1:np];
+parnp2=parini3[np+1:2*np];
+parnp3=parini3[2*np+1:3*np];
+parnm1=parini3[3*np+1:3*np+nm];
+parnl1=parini3[3*np+nm+1:3*np+nm+nl];
+parnm2=parini3[3*np+nm+nl+1:3*np+nm+nl+nm];
+parnl2=parini3[3*np+nm+nl+nm+1:3*np+nm+nl+nm+nl];
+
+print; print "Checking the decomposition of the whole set of parameters: ";
+print; 
+print "SFA GROUP 1:      ";; print parnp1';
+print "SFA GROUP 2:      ";; print parnp2';
+print "SFA GROUP 3:      ";; print parnp3';
+print "Logit variables  1: ";; print parnm1';
+print "Lambda variables 1: ";; print parnl1';
+print "Logit variables  2: ";; print parnm2';
+print "Lambda variables 2: ";; print parnl2';
+
+wait;
+
+@ --------------------------------------------------------- @
+@ -- maximization of the likelihood function - 3 classes -- @
+@ --------------------------------------------------------- @
+
+__title="LCM -ENDOGENOUS Lambda INSIDE - 3 classes ";
+_max_CovPar=2; _max_Algorithm=4;  _max_ParNames=mvname3; _max_GradTol=0.0001;
+{ parpro3,f,g,cov,retcode }=maxlik(data,0,&endoglcm3,parini3); 
+call maxprt(parpro3,f,g,cov,retcode);
+
+format /rds 15,12;
+print; print "LCM -ENDOGENOUS Lambda INSIDE - 3 classes"; print parpro3;
+
+@ ----- Likehood function: 3-class DC-LCM model - Endogenous Lambda INSIDE  ---- @
+proc endoglcm3(par,data);
+local parnp1,parnp2,parnp3,parnm1,parnl1,parnm2,parnl2;
+local lam1,lam2,lamt1,lamt2,m1,m2,prob1,prob2,prob3,lf,f;
+parnp1=par[1:np];
+parnp2=par[np+1:2*np];
+parnp3=par[2*np+1:3*np];
+parnm1=par[3*np+1:3*np+nm];
+parnl1=par[3*np+nm+1:3*np+nm+nl];
+parnm2=par[3*np+nm+nl+1:3*np+nm+nl+nm];
+parnl2=par[3*np+nm+nl+nm+1:3*np+nm+nl+nm+nl];
+lam1=exp(l*parnl1)./(exp(l*parnl1)+1);      @ computation of lambda_1 @
+lam2=exp(l*parnl2)./(exp(l*parnl2)+1);      @ computation of lambda_2 @
+lamt1=lam1.^tr;                             @ lambda_1^tr trend @
+lamt2=lam2.^tr;                             @ lambda_2^tr trend @
+m1=dislag2(q,cod,t,lam1)~lamt1;              @ computation of m for class 1 @
+m1=(1-lam1).*m1;                           
+m2=dislag2(q,cod,t,lam2)~lamt2;              @ computation of m for class 2 @
+m2=(1-lam2).*m2;                          
+prob1=exp(m1*parnm1)./(exp(m1*parnm1)+exp(m2*parnm2)+1);   @ computation of priors for class 1 @
+prob2=exp(m2*parnm2)./(exp(m1*parnm2)+exp(m2*parnm2)+1);   @ computation of priors for class 2 @
+prob3=1-prob1-prob2;
+f=exp(halfalthet(parnp1,data)).*prob1+exp(halfalthet(parnp2,data)).*prob2+exp(halfalthet(parnp3,data)).*prob3;
+lf=ln(f);
+retp(lf);
+endp;
+
+@ ----- posterior class probabilities - Endogenous Lambda INSIDE ---- @
+proc prendoglcm3(par,data);
+local parnp1,parnp2,parnp3,parnm1,parnl1,parnm2,parnl2;
+local lam1,lam2,lamt1,lamt2,m1,m2,prob1,prob2,prob3,lf,f;
+local post1,post2,post3,f1,f2,f3;
+parnp1=par[1:np];
+parnp2=par[np+1:2*np];
+parnp3=par[2*np+1:3*np];
+parnm1=par[3*np+1:3*np+nm];
+parnl1=par[3*np+nm+1:3*np+nm+nl];
+parnm2=par[3*np+nm+nl+1:3*np+nm+nl+nm];
+parnl2=par[3*np+nm+nl+nm+1:3*np+nm+nl+nm+nl];
+lam1=exp(l*parnl1)./(exp(l*parnl1)+1);      @ computation of lambda_1 @
+lam2=exp(l*parnl2)./(exp(l*parnl2)+1);      @ computation of lambda_2 @
+lamt1=lam1.^tr;                             @ lambda_1^tr trend @
+lamt2=lam2.^tr;                             @ lambda_2^tr trend @
+m1=dislag2(q,cod,t,lam1)~lamt1;              @ computation of m for class 1 @
+m1=(1-lam1).*m1;                           
+m2=dislag2(q,cod,t,lam2)~lamt2;              @ computation of m for class 2 @
+m2=(1-lam2).*m2;                          
+prob1=exp(m1*parnm1)./(exp(m1*parnm1)+exp(m2*parnm2)+1);   @ computation of priors for class 1 @
+prob2=exp(m2*parnm2)./(exp(m1*parnm2)+exp(m2*parnm2)+1);   @ computation of priors for class 2 @
+prob3=1-prob1-prob2;
+f1=exp(halfalthet(parnp1,data)).*prob1; 
+f2=exp(halfalthet(parnp2,data)).*prob2;
+f3=exp(halfalthet(parnp3,data)).*prob3;
+f=f1+f2+f3; post1=f1./f; post2=f2./f; post3=f3./f;
+retp(100*(prob1~prob2~prob3~post1~post2~post3~exp(halfalthet(parnp1,data))~exp(halfalthet(parnp2,data))~exp(halfalthet(parnp3,data))));
+endp;
+
+@ decomposition of the whole set of parameters @
+par=parpro3;
+parnp1=par[1:np];
+parnp2=par[np+1:2*np];
+parnp3=par[2*np+1:3*np];
+parnm1=par[3*np+1:3*np+nm];
+parnl1=par[3*np+nm+1:3*np+nm+nl];
+parnm2=par[3*np+nm+nl+1:3*np+nm+nl+nm];
+parnl2=par[3*np+nm+nl+nm+1:3*np+nm+nl+nm+nl];
+
+print; 
+print "-------------------------------------------------------";
+print "----- Descriptive statistics of Lambda - 3 classes ----";
+print "-------------------------------------------------------";
+print;
+print "Coeficients of Lambda - class 1: ";; print parnl1';
+lambda1=exp(l*parnl1)./(exp(l*parnl1)+1);      @ computation of lambda_1 @
+print "Statistics of Lambda - class 1: ";; 
+call efianual(lambda1,t); call efianual(lambda1,ones(rows(t),1)); print; 
+print;
+print "Meanc(lambda - class 1)= ";; print meanc(lambda1);; 
+print;
+print "Coeficients of Lambda - class 2: ";; print parnl2';
+lambda2=exp(l*parnl2)./(exp(l*parnl2)+1);      @ computation of lambda_2 @
+print "Statistics of Lambda - class 2: ";; 
+call efianual(lambda2,t); call efianual(lambda2,ones(rows(t),1)); print; 
+print;
+print "Meanc(lambda - class 2)= ";; print meanc(lambda2);; 
+
+print; 
+print "-------------------------------------------";
+print "------ Posterior class probabilities ------";
+print "-------------------------------------------";
+
+print; print "Posterior class probabilities - Endogenous Lambda INSIDE (TECH=1, TECH=2): "; 
+format /rds 6,2;
+prob3g=prendoglcm3(parpro2,data);
+g1=prob3g[.,4].>=prob3g[.,5] .and prob3g[.,4].>=prob3g[.,6]; 
+g2=prob3g[.,5].>prob3g[.,4]  .and prob3g[.,5].>=prob3g[.,6];
+g3=1-g1-g2;
+
+@ ---- lnRP1 ---- @
+lnrpprior1=ln(prob3g[.,1]./(100-prob3g[.,1]-prob3g[.,2]));
+
+@ ---- lnRP2 ---- @
+lnrpprior2=ln(prob3g[.,2]./(100-prob3g[.,1]-prob3g[.,2])); 
+
+print; 
+print "------------------------------";
+print "------ Sample partition ------";
+print "------------------------------";
+print;
+print "Class 1 - Class 2  - Class3 "; print sumc(g1)~sumc(g2)~sumc(g3);
+
+
+@ ------------------------------------------- @
+@ -- Individual probabilities (and lambda) -- @
+@ ------------------------------------------- @
+@print; print " -- Individual probabilities (and lambda) -- ";
+print "cod     t    lnrp1    lnrp2     lambda1       lambda2    prior1   prior2    prior3   post1    post2    post3    lf1   lf2 "; 
+print cod~t~lnrpprior1~lnrpprior2~lambda1~lambda2~prob3g;@ 
+
+print; 
+print "------------------------------";
+print "------ Efficiency scores -----";
+print "------------------------------";
+print;
+
+@ ---Efficiency scores: Half-normal (see almanidis et al.) - two groups --- @
+print; 
+print "Efficiency scores - GROUP 1";
+b=parnp1[1:rows(parnp1)-1-nz]; sigmav=exp(parnp1[rows(parnp1)-nz]); bz=parnp1[rows(parnp1)-nz+1:rows(parnp1)];
+sigmau=exp(z*bz);
+e=y-x*b;
+e=e;   @ insert  minus sign if cost funtion  @
+sigma=(sigmau^2+sigmav^2)^0.5; mua=(-e.*sigmau^2)./sigma^2; sigmaa=sigmau*sigmav./sigma;     @ e=v-u @
+uhat=mua+sigmaa.*(pdfn(-mua./sigmaa))./(1-cdfn(-mua./sigmaa));
+ef=exp(-uhat); 
+call efianual(selif(ef,g1),selif(t,g1)); call efianual(selif(ef,g1),ones(rows(selif(t,g1)),1));
+print; 
+print "Efficiency scores - GROUP 2";
+b=parnp2[1:rows(parnp1)-1-nz]; sigmav=exp(parnp1[rows(parnp1)-nz]); bz=parnp1[rows(parnp1)-nz+1:rows(parnp1)];
+sigmau=exp(z*bz);
+e=y-x*b;
+e=e;   @ insert  minus sign if cost funtion  @
+sigma=(sigmau^2+sigmav^2)^0.5; mua=(-e.*sigmau^2)./sigma^2; sigmaa=sigmau*sigmav./sigma;     @ e=v-u @
+uhat=mua+sigmaa.*(pdfn(-mua./sigmaa))./(1-cdfn(-mua./sigmaa));
+ef=exp(-uhat); 
+call efianual(selif(ef,g1),selif(t,g1)); call efianual(selif(ef,g1),ones(rows(selif(t,g1)),1));
+print; 
+print "Efficiency scores - GROUP 3";
+b=parnp3[1:rows(parnp1)-1-nz]; sigmav=exp(parnp1[rows(parnp1)-nz]); bz=parnp1[rows(parnp1)-nz+1:rows(parnp1)];
+sigmau=exp(z*bz);
+e=y-x*b;
+e=e;   @ insert  minus sign if cost funtion  @
+sigma=(sigmau^2+sigmav^2)^0.5; mua=(-e.*sigmau^2)./sigma^2; sigmaa=sigmau*sigmav./sigma;     @ e=v-u @
+uhat=mua+sigmaa.*(pdfn(-mua./sigmaa))./(1-cdfn(-mua./sigmaa));
+ef=exp(-uhat); 
+call efianual(selif(ef,g1),selif(t,g1)); call efianual(selif(ef,g1),ones(rows(selif(t,g1)),1));
+
+
+print;
+print "------------------------------------------------------------ ";
+print "------------------------------------------------------------ ";
+print "---- END of TASK 6: ESTIMATION OF FRONTIER MODELS (II)  ---- ";
+print "------------------------------------------------------------ ";
+print "------------------------------------------------------------ ";
+
+end;
+
+
+@ ------------------------------------------------------ @
+@ ------------------------------------------------------ @
+@ ------------------------------------------------------ @
+@ ---- Set of procedures writen by Luis Orea ----------- @
+@ -- (do not drop them as they have been used before) -- @
+@ ------------------------------------------------------ @
+@ ------------------------------------------------------ @
+@ ------------------------------------------------------ @
+
+@ ----------------------- @
+
+proc des(z);
+local i,zz;
+i=1;
+do while i<=cols(z);
+if i==1; 
+zz=z[.,i]-meanc(z[.,i]);
+else;
+zz=zz~(z[.,i]-meanc(z[.,i]));
+endif;
+i=i+1;
+endo;
+retp(zz);
+endp;
+
+
+proc tl(x);
+local z,i,m1,m;
+z=x;
+i=1;
+do while i<=cols(x);
+m1=0.5*x[.,i]^2;
+z=z~m1;
+i=i+1;
+endo;
+i=1;
+do while i<=cols(x)-1;
+m=x[.,i].*x[.,i+1:cols(x)];
+z=z~m;
+i=i+1;
+endo;
+retp(z);
+endp;
+
+
+proc between(z,codz);
+local ulti,pri,i,e,z1;
+  z1=zeros(rows(z),cols(z));
+  ulti=maxc(codz);
+  pri=minc(codz);
+  i=pri;
+    do while i<=ulti;
+    e=codz.==i;
+    z1=z1+e.*(meanc(packr(selif(z,e))))';
+  i=i+1;
+  endo;
+retp(z1);
+endp;
+
+proc recod(z);
+local ulti,pri,i,e,z1,j;
+  ulti=maxc(z);
+  pri=minc(z);
+  i=1; j=1;
+  do while i<=ulti;
+    e=z.==i;
+    if sumc(e)>=1; if j==1; z1=j.*e; else; z1=z1+j.*e; endif; j=j+1;endif;
+  i=i+1;
+  endo;
+retp(z1);
+endp;
+
+proc tmayi(z);
+local ulti,pri,i,e,z1;
+  ulti=maxc(z);
+  pri=minc(z);
+  i=pri;
+  z1=zeros(rows(z),1);
+  do while i<=ulti;
+    e=z.==i;
+    z1=z1+sumc(e).*e;
+  i=i+1;
+  endo;
+retp(z1);
+endp;
+
+
+proc within(z,codz);
+z=z-between(z,codz);
+retp(z);
+endp;
+
+proc ealpha(z,ecod,codz);
+local ulti,pri,i,e,z1;
+  z1=zeros(rows(codz),1);
+  ulti=maxc(codz);
+  pri=minc(codz);
+  i=pri;
+    do while i<=ulti;
+    e=codz.==i;
+    z1=z1+e.*selif(z,ecod.==i);
+  i=i+1;
+  endo;
+retp(z1);
+endp;
+
+
+proc lag(z,l);
+local z1;
+if l.<=0;
+  z1=z[1:rows(z)-abs(l)];
+  z1=zeros(abs(l),1)|z1;
+else;
+  z1=z[(1+l):rows(z)];
+  z1=z1|zeros(l,1);
+endif;
+retp(z1);
+endp;
+
+
+
+
+@ -------------------------- Procedures ---------------------------- @
+
+proc between(z,codz);
+local ulti,pri,i,e,z1;
+  z1=zeros(rows(z),cols(z));
+  ulti=maxc(codz);
+  pri=minc(codz);
+  i=pri;
+    do while i<=ulti;
+    e=codz.==i;
+    z1=z1+e.*(meanc(packr(selif(z,e))))';
+  i=i+1;
+  endo;
+retp(z1);
+endp;
+
+proc within(z,codz);
+z=z-between(z,codz);
+retp(z);
+endp;
+
+proc ealpha(z,ecod,codz);
+local ulti,pri,i,e,z1;
+  z1=zeros(rows(codz),1);
+  ulti=maxc(codz);
+  pri=minc(codz);
+  i=pri;
+    do while i<=ulti;
+    e=codz.==i;
+    z1=z1+e.*selif(z,ecod.==i);
+  i=i+1;
+  endo;
+retp(z1);
+endp;
+
+proc (10) = olsp(vardep,varindep);
+local y1,x1,bols1,sigmaols1,varcov1,tstud1,e1,r2corr1,obs1,dof1,rvarcov1,rtstud1,aic1,bic1;
+y1=vardep;
+x1=varindep;
+obs1=rows(y1);
+bols1=invpd(x1'x1)*x1'y1;
+sigmaols1=sqrt((y1'y1-bols1'x1'y1)/(obs1-cols(x1)));
+varcov1=sigmaols1^2*invpd(x1'x1);
+tstud1=bols1./sqrt(diag(varcov1));
+e1=y1-x1*bols1;
+rvarcov1=invpd(x1'x1)*x1'((e1*e1').*eye(rows(e1)))*x1*invpd(x1'x1);
+rtstud1=bols1./sqrt(diag(rvarcov1));
+r2corr1=1-(e1'e1)/((y1'y1)-rows(y1)*(meanc(y1)^2));
+dof1=obs1-cols(x1);
+
+aic1=ln(meanc(e1^2))+2*cols(x1)/rows(x1);   @ see Veerbek, p. 61 @
+bic1=ln(meanc(e1^2))+cols(x1)*ln(rows(x1))/rows(x1);   @ see Veerbek, p. 61 @
+
+print; print "    Coef.     t-stud     Robust-t "; 
+format /rds 10,4;
+print bols1~tstud1~rtstud1;
+print; print "Sigma: ";; print sigmaols1;
+print "Sigma2: ";; print sigmaols1^2;
+print "R2: ";; print r2corr1;
+print "dof: ";; print dof1;
+format /rds 5,0;
+print "Observations: ";; print obs1;
+format /rdt 8,4;
+print; print "AIC = ln(meanc(e^2))+2*k/N: ";; print aic1;
+print "BIC = ln(meanc(e^2))+k*ln(N)/N: ";; print bic1;
+
+retp(bols1,tstud1,rtstud1,sigmaols1,r2corr1,obs1,varcov1,rvarcov1,e1,dof1);
+endp;
+
+proc (8) = femp(vardep,varindep,i);
+local y1,x1,bols1,sigmae21,sigmae1,sigmaols1,ols1,varcov1,tstud1,e1,r2corr1,obs1,dof1;
+y1=within(vardep,i);
+x1=within(varindep,i);   
+obs1=rows(y1);
+bols1=invpd(x1'x1)*x1'y1;
+sigmaols1=sqrt((y1'y1-bols1'x1'y1)/(rows(y1)-maxc(i)-cols(x1)));
+varcov1=sigmaols1^2*invpd(x1'x1);
+tstud1=bols1./sqrt(diag(varcov1));
+e1=y1-x1*bols1;
+r2corr1=1-(e1'e1)/((y1'y1)-rows(y1)*(meanc(y1)^2));
+dof1=(obs1-maxc(i)-cols(x1));
+sigmae21=e1'e1/dof1;                    @ see 16-60, Greene, p. 475 @
+sigmae1=sigmae21^0.5;                   @ see 16-60, Greene, p. 475 @
+
+print; print "    Coef.     t-stud   "; 
+format /rds 10,4;
+print (bols1~tstud1);
+print; print "R2: ";; print r2corr1;
+print "dof: ";; print dof1;
+print "sigmae: ";; print sigmae1;
+print "sigmae2: ";; print sigmae21;
+format /rds 5,0;
+print "Observations: ";; print obs1;
+retp(bols1,tstud1,sigmae1,r2corr1,obs1,varcov1,e1,dof1);
+endp;
+
+proc (8) = betp(vardep,varindep,i,trend);
+local y1,x1,bols1,sigmaue21,sigmaue1,sigmaols1,ols1,varcov1,tstud1,e1,r2corr1,obs1,dof1;
+y1=selif(between(vardep,i),trend.==1);
+x1=selif(between(varindep,i),trend.==1);
+x1=x1~ones(rows(x1),1);
+obs1=rows(y1);
+bols1=invpd(x1'x1)*x1'y1;
+sigmaols1=sqrt((y1'y1-bols1'x1'y1)/(obs1-cols(x1)));
+varcov1=sigmaols1^2*invpd(x1'x1);
+tstud1=bols1./sqrt(diag(varcov1));
+e1=y1-x1*bols1;
+r2corr1=1-(e1'e1)/((y1'y1)-rows(y1)*(meanc(y1)^2));
+dof1=obs1-cols(x1);
+sigmaue21=e1'e1/dof1;                       @ see 16-62, Greene, p. 475 @
+sigmaue1=sigmaue21^0.5;
+print; print "    Coef.     t-stud   "; 
+format /rds 10,4;
+print (bols1~tstud1);
+print; print "R2: ";; print r2corr1;
+print "dof: ";; print dof1;
+print "sigmaue: ";; print sigmaue1;
+print "sigmaue2: ";; print sigmaue21;
+format /rds 5,0;
+print "Observations: ";; print obs1;
+retp(bols1,tstud1,sigmaue1,r2corr1,obs1,varcov1,e1,dof1);
+endp;
+
+proc (12) = remp(vardep,varindep,i,trend);
+local y1,x1,bols1,sigmaue21,sigmaue1,sigmau21,sigmau1,sigmae21,sigmae1,sigmaols1,ols1,varcov1,tstud1,e1,r2corr1,obs1,dof1,theta1,rho1,consadj1;
+
+y1=within(vardep,i);
+x1=within(varindep,i);   
+obs1=rows(y1);
+bols1=invpd(x1'x1)*x1'y1;
+e1=y1-x1*bols1;
+dof1=(obs1-maxc(i)-cols(x1));
+sigmae21=e1'e1/dof1;                    @ see 16-60, Greene, p. 475 @
+sigmae1=sigmae21^0.5;                   @ see 16-60, Greene, p. 475 @
+
+y1=selif(between(vardep,i),trend.==1);
+x1=selif(between(varindep,i),trend.==1);
+x1=x1~ones(rows(x1),1);
+obs1=rows(y1);
+bols1=invpd(x1'x1)*x1'y1;
+e1=y1-x1*bols1;
+dof1=obs1-cols(x1);
+sigmaue21=e1'e1/dof1;                       @ see 16-62, Greene, p. 475 @
+sigmaue1=sigmaue21^0.5;
+
+sigmau21=sigmaue21-sigmae21/T;              @ see 16-63, Greene, p. 475 @
+sigmau1=sigmau21^0.5;            
+
+format /rds 10,4;
+print;
+print "sigmae: ";; print sigmae1;
+print "sigmae2: ";; print sigmae21;
+print "sigmaue: ";; print sigmaue1;
+print "sigmaue2 (sigmae2/T+sigmau2): ";; print sigmaue21;
+print "sigmau: ";; print sigmau1;
+print "sigmau2: ";; print sigmau21;
+
+rho1=sigmau21/(sigmau21+sigmae21);
+print "Fraction of variance due to u_i (Rho): ";; print rho1;
+theta1=1-sigmae1/(sigmae21+T*sigmau21)^0.5;
+print "Theta (Greene, p. 470): ";; print theta1;
+
+y1=vardep-theta1*between(vardep,i);
+x1=varindep-theta1*between(varindep,i);
+x1=x1~ones(rows(x1),1)*(1-theta1);
+obs1=rows(y1);
+bols1=invpd(x1'x1)*x1'y1;
+sigmaols1=sqrt((y1'y1-bols1'x1'y1)/(obs1-cols(x1)));
+varcov1=sigmaols1^2*invpd(x1'x1);
+tstud1=bols1./sqrt(diag(varcov1));
+e1=y1-x1*bols1;
+r2corr1=1-(e1'e1)/((y1'y1)-rows(y1)*(meanc(y1)^2));
+dof1=obs1-cols(x1);
+
+print; print "    Coef.     t-stud   "; 
+format /rds 10,4;
+print (bols1~tstud1);
+
+print; print "R2: ";; print r2corr1;
+print "dof: ";; print dof1;
+format /rds 5,0;
+print "Observations: ";; print obs1;
+
+retp(bols1,tstud1,sigmaue1,r2corr1,obs1,varcov1,e1,dof1,rho1,theta1,sigmau1,sigmae1);
+endp;
+
+
+proc efianual(efivar,codyear);
+local j;
+format /rds 7,3;
+print; print "Annual statistics "; 
+print; print "   num    year    mean     std    min     max";
+j=minc(codyear);
+do while j<=maxc(codyear);
+print sumc(codyear.==j);; 
+print meanc(selif(codyear~efivar,codyear.==j))';; 
+print stdc(selif(efivar,codyear.==j))';;
+print minc(selif(efivar,codyear.==j))';;
+print maxc(selif(efivar,codyear.==j))'; 
+j=j+1;
+endo;
+retp(efivar);
+endp;
